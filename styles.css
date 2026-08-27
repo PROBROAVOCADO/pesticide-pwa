@@ -110,3 +110,10 @@
 /* 提示條 */
 #toast-host{position:fixed;z-index:80;left:0;right:0;bottom:calc(84px + env(safe-area-inset-bottom));display:flex;justify-content:center;pointer-events:none}
 .toast{max-width:calc(100% - 40px);padding:12px 20px;border-radius:999px;background:rgba(44,55,34,.94);color:var(--paper);font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(44,55,34,.3);animation:rise .22s ease}
+
+/* 查詢頁的第二個欄位 */
+.search-box .sub-label{display:block;margin:13px 0 6px;font-size:12px;font-weight:700;color:var(--muted)}
+.search-box .wide-input{width:100%;height:52px;border:1px solid var(--rule);border-radius:14px;background:var(--sunken);padding:0 14px}
+
+/* 已釘選的常用藥劑 */
+.ghost-btn.pinned{color:var(--herb);border-color:rgba(74,103,51,.4);background:#e8eedf}

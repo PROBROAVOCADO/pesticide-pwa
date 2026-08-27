@@ -44,15 +44,17 @@ export function drugCardHtml(drug, action, dataAttr, compact) {
 /* 藥劑查詢分頁                                                        */
 /* ------------------------------------------------------------------ */
 
-export function searchViewHtml({ query, drugs, loading, message, fromCache }) {
+export function searchViewHtml({ query, crop, drugs, loading, message, note }) {
   const results = drugs.length
-    ? `${fromCache ? '<p class="offline-note">目前連不上官方資料，以下是這台裝置查過的藥劑。</p>' : ''}
+    ? `${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
        <div class="drug-grid">${drugs.map((d, i) => drugCardHtml(d, 'open-detail', `data-idx="${i}"`, false)).join('')}</div>`
     : loading
       ? ''
-      : `<div class="welcome-card">
+      : `${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
+         <div class="welcome-card">
            <b>可以查什麼？</b>
-           <p>普通名稱、商品廠牌或農藥代號都可以。點開藥劑後，可看有效成分、抗藥性代碼、核准作物、稀釋倍數與安全採收期。</p>
+           <p>上面填藥劑的普通名稱、商品廠牌或農藥代號；下面填作物。兩欄都填，就只會列出真的核准用在這個作物上的藥。</p>
+           <p>點開藥劑後，可看有效成分、抗藥性代碼、核准作物、稀釋倍數與安全採收期。</p>
          </div>`;
 
   return `
@@ -69,6 +71,11 @@ export function searchViewHtml({ query, drugs, loading, message, fromCache }) {
           <input id="drug-search" data-field="search-query" value="${esc(query)}" placeholder="例如：派滅淨、第滅寧、I215" />
           <button${loading ? ' disabled' : ''}>查詢</button>
         </div>
+
+        <label for="search-crop" class="sub-label">搭配作物</label>
+        <input id="search-crop" class="wide-input" data-field="search-crop" value="${esc(crop)}"
+               placeholder="例如：酪梨、番茄、水稻" />
+
         <small>${esc(message)}</small>
       </form>
 
@@ -195,7 +202,28 @@ export function itemOutputHtml(item, areaHa, water) {
 /* 用量試算分頁                                                        */
 /* ------------------------------------------------------------------ */
 
-function calcDrugHtml(item, canRemove, areaHa, water) {
+/**
+ * 常用藥劑下拉：上半是手動釘選的，下半是從施作紀錄自動累積的最近用過。
+ * 兩邊都空就整個不顯示，免得畫面多一個永遠沒東西的欄位。
+ */
+function favoritesSelectHtml(item, favorites) {
+  const { pinned, recent } = favorites;
+  if (!pinned.length && !recent.length) return '';
+
+  const option = (o) => `<option value="${esc(o.key)}">${esc(o.name)}</option>`;
+
+  return `
+    <label class="field">
+      <span>常用藥劑</span>
+      <select data-field="item-favorite" data-id="${item.id}">
+        <option value="" selected>從常用藥劑選一支…</option>
+        ${pinned.length ? `<optgroup label="我釘選的">${pinned.map(option).join('')}</optgroup>` : ''}
+        ${recent.length ? `<optgroup label="最近用過">${recent.map(option).join('')}</optgroup>` : ''}
+      </select>
+    </label>`;
+}
+
+function calcDrugHtml(item, canRemove, areaHa, water, favorites) {
   const head = `
     <div class="calc-drug-head">
       <span class="step-stamp">第 ${item.id} 種</span>
@@ -214,6 +242,7 @@ function calcDrugHtml(item, canRemove, areaHa, water) {
     return `
       <article class="calc-drug">
         ${head}
+        ${favoritesSelectHtml(item, favorites)}
         <div class="search-line">
           <input data-field="item-query" data-id="${item.id}" value="${esc(item.query)}"
                  placeholder="輸入普通名、廠牌或代號" aria-label="查詢施用農藥" />
@@ -280,7 +309,7 @@ function fieldChipsHtml(fields, selectedId) {
     </div>`;
 }
 
-export function calcViewHtml(calc, fields, areaHa, canRecord) {
+export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
   const { crop, area, areaUnit, water, items, fieldId } = calc;
 
   return `
@@ -325,7 +354,7 @@ export function calcViewHtml(calc, fields, areaHa, canRecord) {
         <span>${items.length} 種</span>
       </div>
 
-      ${items.map((item) => calcDrugHtml(item, items.length > 1, areaHa, Number(water) || 0)).join('')}
+      ${items.map((item) => calcDrugHtml(item, items.length > 1, areaHa, Number(water) || 0, favorites)).join('')}
 
       <button class="add-drug" type="button" data-action="add-item"><span>＋</span>增加一種藥劑</button>
 
@@ -520,7 +549,7 @@ export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, pers
       </button>
 
       <button class="setting-row" data-action="modal" data-modal="support">
-        <span><b>隨喜支持</b><small>加 LINE 好友，給開發者一點鼓勵</small></span><i>›</i>
+        <span><b>買杯咖啡支持☕</b><small>加LINE好友，給開發者一點鼓勵~</small></span><i>›</i>
       </button>
 
       <article class="about-card">
@@ -536,7 +565,7 @@ export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, pers
 /* 藥劑詳細資料面板                                                    */
 /* ------------------------------------------------------------------ */
 
-export function detailHtml({ drug, ranges, loading, crop, shown }) {
+export function detailHtml({ drug, ranges, loading, crop, shown, pinned }) {
   const resistance = text(drug['FRAC殺菌劑抗藥性']) || text(drug['IRAC殺蟲劑抗藥性']);
 
   const rangeCards = loading
@@ -574,6 +603,10 @@ export function detailHtml({ drug, ranges, loading, crop, shown }) {
         <div class="wide"><span>有效成分</span><b>${esc(text(drug['化學成分']) || '—')}</b></div>
         <div class="wide"><span>許可證／有效期限</span><b>${esc(license(drug))}・${esc(text(drug['有效期限']) || '—')}</b></div>
       </div>
+
+      <button class="ghost-btn${pinned ? ' pinned' : ''}" type="button" data-action="toggle-favorite">
+        ${pinned ? '★ 已釘選為常用藥劑（點一下取消）' : '☆ 釘選為常用藥劑'}
+      </button>
 
       <div class="section-row"><h3>核准使用範圍</h3><span>${ranges.length} 筆</span></div>
 
@@ -879,8 +912,10 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
       <span class="eyebrow">版本更新</span>
       <h2>${esc(version)}</h2>
       <ul>
-        <li>新增土地管理，試算時可快捷選地帶入面積與作物。</li>
-        <li>新增施作紀錄與月曆，可推算參考最早採收日。</li>
+        <li>查詢可同時指定藥劑與作物，只列出真的核准用在這個作物上的藥。</li>
+        <li>試算頁新增常用藥劑下拉，可釘選也會自動累積最近用過的。</li>
+        <li>土地管理：選一塊地就帶入面積與作物。</li>
+        <li>施作紀錄與月曆，可推算參考最早採收日。</li>
         <li>紀錄可複製或加入手機行事曆，另外提供匯出備份。</li>
         <li>查過的藥劑會存在本機，沒訊號時仍可翻查。</li>
       </ul>`,
@@ -890,9 +925,9 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
       <p>iPhone：用 Safari 開啟，點分享，再選「加入主畫面」。<br />Android：用 Chrome 開啟選單，選「安裝應用程式」。</p>
       <p>安裝之後資料被系統清理的機率較低，也能在沒訊號的田裡開啟。</p>`,
     support: `
-      <span class="eyebrow">隨喜支持</span>
-      <h2>謝謝你的鼓勵</h2>
-      <p>可以先加入 LINE 好友，留言告訴我你最常種的作物，或回報使用上的問題。</p>
+      <span class="eyebrow">謝謝支持與鼓勵💛</span>
+      <h2>買杯咖啡支持☕</h2>
+      <p>加入LINE好友，隨喜支持，您的鼓勵是開發者持續維護與更新的動力💪</p>
       <a class="modal-action" href="${lineUrl}" target="_blank" rel="noreferrer">開啟 LINE</a>`,
     notice: `
       <span class="eyebrow">提醒</span>

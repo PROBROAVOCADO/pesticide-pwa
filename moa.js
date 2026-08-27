@@ -34,11 +34,22 @@ export function normalize(s) {
     .toLowerCase();
 }
 
-/** 使用範圍的作物是否符合使用者輸入的作物。空字串代表不篩選。 */
+/**
+ * 使用範圍的作物是否符合使用者輸入的作物。
+ *
+ * 使用者沒填作物就不篩選，全部通過。
+ * 但官方那一筆的作物名稱是空的時候必須算「不符合」——
+ * 空字串會被任何字串 includes 到，放著不管的話，
+ * 一支藥只要有一筆沒填作物的範圍，就會被誤判成核准用於所有作物。
+ */
 export function matchesCrop(range, crop) {
-  const a = normalize(text(range['作物名稱']));
-  const b = normalize(crop);
-  return !b || a.includes(b) || b.includes(a);
+  const wanted = normalize(crop);
+  if (!wanted) return true;
+
+  const official = normalize(text(range['作物名稱']));
+  if (!official) return false;
+
+  return official.includes(wanted) || wanted.includes(official);
 }
 
 async function fetchJson(url) {

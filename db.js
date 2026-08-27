@@ -17,12 +17,13 @@
  */
 
 const DB_NAME = 'field-meds-pwa';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORE = {
   fields: 'fields',
   applications: 'applications',
   drugCache: 'drugCache',
+  favorites: 'favorites',
   meta: 'meta',
 };
 
@@ -58,6 +59,11 @@ function openDb() {
 
       if (!db.objectStoreNames.contains(STORE.drugCache)) {
         db.createObjectStore(STORE.drugCache, { keyPath: 'key' });
+      }
+
+      // v2 新增：手動釘選的常用藥劑。
+      if (!db.objectStoreNames.contains(STORE.favorites)) {
+        db.createObjectStore(STORE.favorites, { keyPath: 'key' });
       }
 
       if (!db.objectStoreNames.contains(STORE.meta)) {
@@ -186,6 +192,9 @@ export function cacheRanges(key, ranges) {
 
 export const getCached = (key) => get(STORE.drugCache, key).catch(() => null);
 
+/** 所有快取的藥劑（含使用範圍），離線用作物查詢時要整份掃過。 */
+export const allCached = () => getAll(STORE.drugCache).catch(() => []);
+
 /** 離線時的替代查詢：掃過所有快取的藥劑，比對普通名稱、廠牌與代號。 */
 export function searchCachedDrugs(query) {
   const q = String(query || '').trim().toLowerCase();
@@ -205,6 +214,24 @@ export function searchCachedDrugs(query) {
     )
     .catch(() => []);
 }
+
+/* ------------------------------------------------------------------ */
+/* 常用藥劑（手動釘選）                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 釘選只存藥劑本身，不存使用範圍 —— 範圍會隨官方公告變動，
+ * 每次選用時再從 drugCache 或官方重新取得，才不會拿到過期的用法。
+ */
+export const listFavorites = () =>
+  getAll(STORE.favorites)
+    .then((rows) => rows.sort((a, b) => (b.pinnedAt || 0) - (a.pinnedAt || 0)))
+    .catch(() => []);
+
+export const addFavorite = (key, drug) =>
+  put(STORE.favorites, { key, drug, name: String(drug['廠牌名稱'] ?? drug['中文名稱'] ?? key).trim(), pinnedAt: Date.now() });
+
+export const removeFavorite = (key) => remove(STORE.favorites, key);
 
 /* ------------------------------------------------------------------ */
 /* 持久儲存                                                            */

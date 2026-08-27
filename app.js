@@ -1,5 +1,7 @@
 import { calcRange, formatRange, formatWater, toHectares } from './calc.js';
 import {
+  addFavorite,
+  allCached,
   cacheDrugs,
   cacheRanges,
   dbAvailable,
@@ -9,7 +11,9 @@ import {
   getCached,
   importBackup,
   listApplications,
+  listFavorites,
   listFields,
+  removeFavorite,
   requestPersistence,
   saveApplication,
   saveField,
@@ -44,7 +48,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.2.0';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -90,11 +94,12 @@ const emptyItem = () => ({
 
 const state = {
   tab: 'search',
-  search: { query: '', drugs: [], loading: false, message: '輸入普通名稱、廠牌名稱或農藥代號', fromCache: false },
+  search: { query: '', crop: '', drugs: [], loading: false, message: '填藥劑名稱、作物，或兩個都填', note: '' },
   calc: { crop: '', area: '1', areaUnit: 'fen', water: '200', items: [emptyItem()], fieldId: '' },
   records: { month: new Date(), selected: null, filterFieldId: '' },
   fields: [],
   applications: [],
+  favorites: [],
   overlay: null, // { kind, ... }
   installPrompt: null,
   persisted: false,
@@ -119,7 +124,7 @@ const canRecord = () => state.calc.items.some((i) => i.drug && i.ranges[i.select
 
 const views = {
   search: () => searchViewHtml(state.search),
-  calc: () => calcViewHtml(state.calc, state.fields, areaHa(), canRecord()),
+  calc: () => calcViewHtml(state.calc, state.fields, areaHa(), canRecord(), favoriteOptions()),
   records: () =>
     recordsViewHtml({
       month: state.records.month,
@@ -163,6 +168,7 @@ function renderOverlay() {
       loading: o.loading,
       crop: o.crop,
       shown: o.ranges.filter((r) => matchesCrop(r, o.crop)),
+      pinned: state.favorites.some((f) => f.key === license(o.drug)),
     });
   } else if (o.kind === 'fields') {
     overlayEl.innerHTML = fieldsSheetHtml(state.fields);
@@ -211,6 +217,7 @@ function renderOverlayHtmlForDetail() {
     loading: o.loading,
     crop: o.crop,
     shown: o.ranges.filter((r) => matchesCrop(r, o.crop)),
+    pinned: state.favorites.some((f) => f.key === license(o.drug)),
   });
 }
 
@@ -258,27 +265,128 @@ async function rangesWithFallback(drug) {
   }
 }
 
+/**
+ * 作物不在 PesticideData 裡 —— 它藏在每一支藥各自的「農藥使用範圍」子資料。
+ * 所以「藥名＋作物」只能先用藥名查，再逐一拓展範圍比對作物。
+ * 每一支都是一次網路請求，所以要限制筆數與同時數，而且被截掉的部分一定要講出來。
+ */
+const CROP_SCAN_LIMIT = 24;
+const CROP_SCAN_CONCURRENCY = 6;
+
+async function filterDrugsByCrop(drugs, crop, onProgress) {
+  const candidates = drugs.slice(0, CROP_SCAN_LIMIT);
+  const hits = new Array(candidates.length).fill(null);
+  let next = 0;
+  let done = 0;
+
+  const worker = async () => {
+    while (next < candidates.length) {
+      const i = next++;
+      try {
+        const ranges = await rangesWithFallback(candidates[i]);
+        // 用索引位置回填，結果才會保持原本的相關度排序。
+        if (ranges.some((r) => matchesCrop(r, crop))) hits[i] = candidates[i];
+      } catch {
+        /* 這一支讀不到就略過，不要拖垮整次查詢 */
+      }
+      onProgress((done += 1), candidates.length);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(CROP_SCAN_CONCURRENCY, candidates.length) }, worker),
+  );
+
+  return {
+    matched: hits.filter(Boolean),
+    scanned: candidates.length,
+    truncated: drugs.length > CROP_SCAN_LIMIT,
+  };
+}
+
+/** 只填作物時的備援：翻查這台裝置已經抓過使用範圍的藥劑。 */
+async function searchCachedByCrop(crop) {
+  const rows = await allCached();
+  return rows
+    .filter((r) => r.drug && Array.isArray(r.ranges) && r.ranges.some((x) => matchesCrop(x, crop)))
+    .map((r) => r.drug);
+}
+
+/** 掃描進度直接改寫那一行小字，不重畫整頁，免得使用者的輸入框被重建。 */
+function setSearchProgress(message) {
+  const el = document.querySelector('#search-form small');
+  if (el) el.textContent = message;
+}
+
 async function runMainSearch() {
   const query = state.search.query.trim();
-  if (query.length < 2) {
-    state.search.message = '請至少輸入兩個字';
+  const crop = state.search.crop.trim();
+
+  if (!query && !crop) {
+    state.search.message = '請填藥劑名稱，或填作物';
+    render();
+    return;
+  }
+  if (query && query.length < 2) {
+    state.search.message = '藥劑名稱請至少輸入兩個字';
     render();
     return;
   }
 
   state.search.loading = true;
   state.search.drugs = [];
-  state.search.fromCache = false;
+  state.search.note = '';
+
+  // 只填作物：官方端無法用作物搜尋，只能翻本機查過的。
+  if (!query) {
+    state.search.message = `正在翻查這台裝置查過的藥劑…`;
+    render();
+    const rows = await searchCachedByCrop(crop);
+    state.search.drugs = rows;
+    state.search.message = rows.length
+      ? `找到 ${rows.length} 筆核准用於「${crop}」的藥劑`
+      : `這台裝置還沒查過核准用於「${crop}」的藥劑`;
+    state.search.note =
+      '官方資料沒有辦法直接用作物搜尋，所以只填作物時，這裡翻的是這台裝置查過的藥。一併填入藥劑名稱可以查得更完整。';
+    state.search.loading = false;
+    render();
+    return;
+  }
+
   state.search.message = '正在翻閱官方登記資料…';
   render();
 
   try {
     const { rows, fromCache } = await searchWithFallback(query);
-    state.search.drugs = rows;
-    state.search.fromCache = fromCache;
-    state.search.message = rows.length
-      ? `找到 ${rows.length} 筆${fromCache ? '本機保存的' : '有效的殺菌／殺蟲'}藥劑`
-      : '沒有找到仍有效且符合分類的藥劑';
+
+    if (!crop) {
+      state.search.drugs = rows;
+      state.search.message = rows.length
+        ? `找到 ${rows.length} 筆${fromCache ? '本機保存的' : '有效的殺菌／殺蟲'}藥劑`
+        : '沒有找到仍有效且符合分類的藥劑';
+      if (fromCache) state.search.note = '目前連不上官方資料，以下是這台裝置查過的藥劑。';
+    } else {
+      state.search.message = `找到 ${rows.length} 筆，正在逐一比對「${crop}」…`;
+      render();
+
+      const { matched, scanned, truncated } = await filterDrugsByCrop(rows, crop, (n, total) =>
+        setSearchProgress(`正在比對「${crop}」…（${n}／${total}）`),
+      );
+
+      state.search.drugs = matched;
+      state.search.message = matched.length
+        ? `${scanned} 筆之中，有 ${matched.length} 筆核准用於「${crop}」`
+        : `查到的 ${scanned} 筆藥劑都沒有核准用於「${crop}」`;
+
+      const notes = [];
+      if (fromCache) notes.push('目前連不上官方資料，以下是這台裝置查過的藥劑。');
+      if (truncated) {
+        notes.push(
+          `藥劑名稱符合的有 ${rows.length} 筆，為了不讓查詢太慢，只比對了前 ${scanned} 筆。把藥劑名稱打得更完整可以縮小範圍。`,
+        );
+      }
+      state.search.note = notes.join('');
+    }
   } catch (error) {
     state.search.message = `${error.message}。這台裝置也還沒有查過符合的藥劑。`;
   } finally {
@@ -344,6 +452,63 @@ async function pickItemDrug(item, drug) {
   } finally {
     item.loading = false;
     render();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 常用藥劑                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 下拉選單的內容：手動釘選的排上面，施作紀錄自動累積的「最近用過」排下面。
+ * 只放名稱與許可證號，真正的官方資料等到選取時才從快取取出，
+ * 這樣釘選清單不會保存到過期的用法。
+ */
+function favoriteOptions() {
+  const pinnedKeys = new Set(state.favorites.map((f) => f.key));
+  const pinned = state.favorites.map((f) => ({ key: f.key, name: f.name || f.key }));
+
+  const seen = new Map();
+  // state.applications 已經是日期新到舊，所以第一次遇到的就是最近一次。
+  for (const app of state.applications) {
+    for (const drug of app.drugs) {
+      if (!drug.license || pinnedKeys.has(drug.license) || seen.has(drug.license)) continue;
+      seen.set(drug.license, { key: drug.license, name: drug.name || drug.license });
+    }
+  }
+
+  return { pinned, recent: [...seen.values()].slice(0, 8) };
+}
+
+async function pickFavorite(item, key) {
+  const drug = state.favorites.find((f) => f.key === key)?.drug || (await getCached(key))?.drug;
+
+  if (!drug) {
+    // 換手機匯入備份後會發生：紀錄裡有這支藥，但官方資料沒跟著過來。
+    toast('這台裝置沒有保存這支藥的官方資料，請用下面的欄位查一次');
+    render();
+    return;
+  }
+
+  pickItemDrug(item, drug);
+}
+
+async function toggleFavorite() {
+  const drug = state.overlay?.drug;
+  if (!drug) return;
+
+  const key = license(drug);
+  const pinned = state.favorites.some((f) => f.key === key);
+
+  try {
+    if (pinned) await removeFavorite(key);
+    else await addFavorite(key, drug);
+    state.favorites = await listFavorites();
+    renderOverlay();
+    render();
+    toast(pinned ? '已取消釘選' : '已加入常用藥劑');
+  } catch (error) {
+    toast(`存不進去：${error.message}`);
   }
 }
 
@@ -641,6 +806,7 @@ async function doImportBackup(file) {
   try {
     const result = await importBackup(JSON.parse(await file.text()));
     await Promise.all([reloadFields(), reloadApplications()]);
+  state.favorites = await listFavorites();
     render();
     notice('匯入完成', `已寫入 ${result.fields} 筆土地與 ${result.applications} 筆施作紀錄。相同的紀錄會被覆寫，本機原有而備份沒有的資料會保留。`);
   } catch (error) {
@@ -800,6 +966,8 @@ const ACTIONS = {
   'export-backup': () => doExportBackup(),
   'import-backup': () => fileInput.click(),
 
+  'toggle-favorite': () => toggleFavorite(),
+
   /* 其他 */
   install: () => install(),
   modal: (d) => {
@@ -830,6 +998,9 @@ document.addEventListener('input', (event) => {
   switch (field) {
     case 'search-query':
       state.search.query = value;
+      break;
+    case 'search-crop':
+      state.search.crop = value;
       break;
     case 'item-query':
       findItem(id).query = value;
@@ -897,6 +1068,8 @@ document.addEventListener('change', (event) => {
   } else if (field === 'item-range') {
     findItem(id).selected = Number(value);
     renderOutputsOnly();
+  } else if (field === 'item-favorite') {
+    if (value) pickFavorite(findItem(id), value);
   } else if (field === 'filter-field') {
     state.records.filterFieldId = value;
     render();
@@ -960,6 +1133,7 @@ render();
 (async () => {
   if (!dbAvailable) state.dbError = '這個瀏覽器不允許本機資料庫。';
   await Promise.all([reloadFields(), reloadApplications()]);
+  state.favorites = await listFavorites();
   const persistence = await requestPersistence();
   state.persisted = persistence.persisted;
   render();
