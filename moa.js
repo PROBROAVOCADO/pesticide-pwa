@@ -60,7 +60,10 @@ export function uniqueDrugs(rows) {
 
 /**
  * 以普通名稱、廠牌名稱、農藥代號三個欄位同時查詢，再合併去重。
- * 單一欄位查不到就回空陣列，不讓一個欄位的失敗拖垮整次查詢。
+ *
+ * 單一欄位失敗不影響其他欄位，但三個欄位全部失敗就要丟出錯誤 ——
+ * 那代表連不上官方資料，不是「查無此藥」。
+ * 分清楚這兩件事，離線備援才有機會接手。
  */
 export async function searchDrugs(query) {
   const q = String(query ?? '').trim();
@@ -70,14 +73,16 @@ export async function searchDrugs(query) {
     ['中文名稱', '廠牌名稱', '農藥代號'].map(async (field) => {
       const filter = encodeURIComponent(`${field} like ${q}`);
       try {
-        return await fetchJson(`${MOA_API}?$top=80&$filter=${filter}`);
+        return { ok: true, rows: await fetchJson(`${MOA_API}?$top=80&$filter=${filter}`) };
       } catch {
-        return [];
+        return { ok: false, rows: [] };
       }
     }),
   );
 
-  return uniqueDrugs(batches.flat()).slice(0, 80);
+  if (batches.every((b) => !b.ok)) throw new Error('目前連不上農業部的資料服務');
+
+  return uniqueDrugs(batches.flatMap((b) => b.rows)).slice(0, 80);
 }
 
 /** 取得一項藥劑的核准使用範圍。官方欄位有時是 http，統一升級為 https 以免被瀏覽器擋掉。 */

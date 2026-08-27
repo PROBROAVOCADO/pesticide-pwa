@@ -1,21 +1,24 @@
 /**
  * 離線外殼。
  *
- * 目前只快取 App 本身的檔案，農業部 API 的回應不在這裡處理
- * （跨網域請求直接放行）。「查過的藥劑離線也能翻」需要 IndexedDB，
- * 那是下一階段的工作。
+ * 這裡只快取 App 本身的檔案，農業部 API 的跨網域請求直接放行。
+ * 「查過的藥劑離線也能翻」是由 db.js 的 drugCache 負責，
+ * 因為那份資料同時也是施作紀錄要保存的官方標示快照。
  *
  * 發版時記得把 CACHE 的版本號一起改，否則使用者會拿到舊檔案。
  */
-const CACHE = 'field-meds-pwa-v1.0.0-r2';
+const CACHE = 'field-meds-pwa-v1.1.0-r1';
 
 const CORE = [
   './',
   './index.html',
   './styles.css',
   './app.js',
+  './views.js',
   './calc.js',
   './moa.js',
+  './db.js',
+  './records.js',
   './manifest.json',
   './favicon.svg',
   './icon-192.png',

@@ -26,3 +26,87 @@
 .check-rows>div{display:flex;justify-content:space-between;gap:12px;font-size:12px}
 .check-rows dt{color:var(--muted);white-space:nowrap}
 .check-rows dd{margin:0;color:var(--ink);font-weight:600;text-align:right}
+
+/* 土地快捷卡片 */
+.field-chips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 12px;margin:0 -2px;scrollbar-width:none}
+.field-chips::-webkit-scrollbar{display:none}
+.field-chip{flex:0 0 auto;min-width:132px;min-height:64px;padding:11px 14px;border:1px solid var(--rule);border-radius:16px;background:var(--paper);display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left}
+.field-chip strong{font-family:'Noto Serif TC',serif;font-size:15px;color:var(--ink);white-space:nowrap}
+.field-chip span{font-size:11px;color:var(--muted);white-space:nowrap}
+.field-chip.active{background:var(--herb);border-color:var(--herb)}
+.field-chip.active strong,.field-chip.active span{color:var(--paper)}
+.field-chip.add{border-style:dashed;background:rgba(253,251,247,.5)}
+.field-chip.add strong{color:var(--herb);font-size:14px}
+
+/* 主要按鈕 */
+.record-cta{width:100%;min-height:56px;margin:16px 0 6px;border:0;border-radius:999px;background:var(--herb);color:var(--paper);font-weight:700;font-size:16px;letter-spacing:1px}
+.record-cta:disabled{background:var(--sunken);color:var(--muted);border:1px solid var(--rule)}
+.ghost-btn{width:100%;min-height:52px;margin-bottom:8px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--brown);font-weight:700}
+.ghost-btn.danger{color:var(--brick);border-color:rgba(156,69,53,.35)}
+.danger-btn{width:100%;min-height:52px;margin:10px 0 8px;border:0;border-radius:999px;background:var(--brick);color:#fff;font-weight:700}
+.cta-note{margin:0 6px 4px;font-size:12px;color:var(--muted)}
+.offline-note{margin:0 4px 10px;padding:10px 12px;border-left:3px solid var(--gold);background:#f8f0dc;font-size:12px;color:var(--brown);border-radius:0 10px 10px 0}
+
+/* 尚未到採收日 */
+.pending-card{border:1px solid rgba(181,131,47,.4);background:#f8f0dc;border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.pending-card>b{color:var(--brown)}
+.pending-card p{margin:10px 0 0;font-size:11px;color:var(--brown)}
+.pending-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed rgba(126,90,46,.25)}
+.pending-row:last-of-type{border-bottom:0}
+.pending-row div{display:flex;flex-direction:column;min-width:0}
+.pending-row strong{font-family:'Noto Serif TC',serif;color:var(--ink);font-size:16px}
+.pending-row span{font-size:11px;color:var(--muted)}
+.pending-row b{color:var(--brick);white-space:nowrap;font-size:14px}
+
+/* 月曆 */
+.calendar{background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius);padding:14px;box-shadow:0 7px 24px rgba(70,58,38,.06)}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.cal-head b{font-family:'Noto Serif TC',serif;font-size:18px;color:var(--ink)}
+.cal-weekdays{display:grid;grid-template-columns:repeat(7,1fr);margin-bottom:4px}
+.cal-weekdays span{text-align:center;font-size:11px;color:var(--muted);font-weight:700}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+.cal-cell{position:relative;aspect-ratio:1;min-height:40px;border:0;border-radius:12px;background:none;color:var(--body);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:14px}
+.cal-cell.outside{color:var(--muted);opacity:.4}
+.cal-cell.today{background:var(--sunken);font-weight:700}
+.cal-cell.selected{background:var(--herb);color:var(--paper);font-weight:700}
+.cal-cell .dot{width:5px;height:5px;border-radius:50%;background:var(--brick);display:block}
+.cal-cell .dot[data-many]{width:14px;border-radius:999px}
+.cal-cell.selected .dot{background:var(--paper)}
+.clear-date{width:100%;min-height:44px;margin-bottom:10px;border:1px dashed var(--rule);border-radius:14px;background:none;color:var(--brown);font-size:12px;font-weight:700}
+
+/* 紀錄列 */
+.record-row{width:100%;text-align:left;padding:15px 16px;margin-bottom:9px;border:1px solid var(--rule);border-radius:17px;background:var(--paper);display:flex;flex-direction:column;gap:3px}
+.record-row:active{transform:scale(.99)}
+.record-row-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.record-row-head strong{font-family:'Noto Serif TC',serif;font-size:17px;color:var(--ink)}
+.record-row>span{font-size:12px;color:var(--brown)}
+.record-row small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mode-tag{flex:0 0 auto;font-size:10px;font-weight:700;color:var(--paper);background:var(--brown);padding:3px 9px;border-radius:999px}
+
+/* 土地管理 */
+.field-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;margin-bottom:9px;border:1px solid var(--rule);border-radius:16px;background:var(--sunken)}
+.field-row div:first-child{display:flex;flex-direction:column;min-width:0}
+.field-row strong{font-family:'Noto Serif TC',serif;font-size:17px;color:var(--ink)}
+.field-row span{font-size:12px;color:var(--muted)}
+.field-row-actions{display:flex;gap:6px;flex:0 0 auto}
+.field-row-actions button{min-height:40px;padding:0 13px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--brown);font-size:12px;font-weight:700}
+.field-row-actions .danger{color:var(--brick);border-color:rgba(156,69,53,.3)}
+
+/* 紀錄表單 */
+.mode-switch{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:6px 0 4px}
+.mode-switch button{min-height:70px;padding:11px;border:1px solid var(--rule);border-radius:16px;background:var(--paper);display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;text-align:left}
+.mode-switch b{font-family:'Noto Serif TC',serif;font-size:15px;color:var(--ink)}
+.mode-switch small{font-size:11px;color:var(--muted)}
+.mode-switch .active{background:var(--herb);border-color:var(--herb)}
+.mode-switch .active b,.mode-switch .active small{color:var(--paper)}
+.record-drug{border:1px solid var(--rule);border-radius:17px;padding:15px;margin-bottom:11px;background:var(--paper)}
+.record-drug-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.record-drug-head strong{font-family:'Noto Serif TC',serif;font-size:17px;color:var(--ink)}
+.record-drug-sub{display:block;font-size:12px;color:var(--brown);margin:2px 0 11px}
+.suggestion{margin:2px 0 10px;font-size:12px;color:var(--muted)}
+.about-card ul{margin:8px 0;padding-left:20px;font-size:13px;color:var(--muted)}
+.about-card li{margin-bottom:3px}
+
+/* 提示條 */
+#toast-host{position:fixed;z-index:80;left:0;right:0;bottom:calc(84px + env(safe-area-inset-bottom));display:flex;justify-content:center;pointer-events:none}
+.toast{max-width:calc(100% - 40px);padding:12px 20px;border-radius:999px;background:rgba(44,55,34,.94);color:var(--paper);font-size:13px;font-weight:600;box-shadow:0 8px 24px rgba(44,55,34,.3);animation:rise .22s ease}
