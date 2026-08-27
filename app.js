@@ -418,7 +418,7 @@ function settingsViewHtml() {
       </button>
 
       <button class="setting-row" data-action="modal" data-modal="support">
-        <span><b>隨喜支持</b><small>加 LINE 好友，給開發者一點鼓勵</small></span><i>›</i>
+        <span><b>買杯咖啡支持☕</b><small>如果這個小工具替你省下一點時間，歡迎請我喝杯咖啡，支持持續維護與更新。</small></span><i>›</i>
       </button>
 
       <article class="about-card">
@@ -509,9 +509,9 @@ function modalHtml() {
       <h2>把田間用藥帶著走</h2>
       <p>iPhone：用 Safari 開啟，點分享，再選「加入主畫面」。<br />Android：用 Chrome 開啟選單，選「安裝應用程式」。</p>`,
     support: `
-      <span class="eyebrow">隨喜支持</span>
-      <h2>謝謝你的鼓勵</h2>
-      <p>可以先加入 LINE 好友，留言告訴我你最常種的作物，或回報使用上的問題。</p>
+      <span class="eyebrow">謝謝鼓勵</span>
+      <h2>買杯咖啡支持☕</h2>
+      <p>加入LINE好友，一杯咖啡/一句鼓勵，都是維護與更新的動力</p>
       <a class="modal-action" href="${LINE_URL}" target="_blank" rel="noreferrer">開啟 LINE</a>`,
   };
 
