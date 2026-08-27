@@ -1,0 +1,18 @@
+{
+  "id": "./field-meds-pwa-v1",
+  "name": "田間用藥・農藥查詢與用量試算",
+  "short_name": "田間用藥",
+  "description": "查詢台灣合法登記殺菌劑與殺蟲劑，依作物、施用面積及用水量試算藥量。",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#E5DECC",
+  "theme_color": "#E5DECC",
+  "lang": "zh-Hant",
+  "categories": ["utilities", "productivity"],
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

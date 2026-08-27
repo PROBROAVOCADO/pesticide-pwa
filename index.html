@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>田間用藥｜農藥查詢與用量試算</title>
+<meta name="description" content="查詢台灣合法登記殺菌劑與殺蟲劑，依作物、施用面積及用水量試算藥量。" />
+
+<meta name="theme-color" content="#E5DECC" />
+<link rel="manifest" href="./manifest.json" />
+<link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="./icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="田間用藥" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700&family=Noto+Serif+TC:wght@600;700&display=swap" />
+<link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+
+<main class="app-shell">
+  <header class="topbar">
+    <div>
+      <span class="eyebrow">農業部公開資料</span>
+      <h1>田間用藥</h1>
+    </div>
+    <button class="version" data-action="modal" data-modal="release">v1.0.0</button>
+  </header>
+
+  <div class="screen" id="screen"></div>
+
+  <nav class="bottom-tabs" id="tabs" aria-label="主要分頁">
+    <button data-action="tab" data-tab="search" aria-current="true"><span>⌕</span>藥劑查詢</button>
+    <button data-action="tab" data-tab="calc" aria-current="false"><span>＋</span>用量試算</button>
+    <button data-action="tab" data-tab="settings" aria-current="false"><span>☰</span>設定</button>
+  </nav>
+</main>
+
+<div id="overlay"></div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>
