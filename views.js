@@ -708,7 +708,85 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
 /* 設定分頁                                                            */
 /* ------------------------------------------------------------------ */
 
-export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, persisted, dbError }) {
+function releaseLogHtml() {
+  return `
+    <div class="release-log">
+      <b>v1.4.2・這一版</b>
+      <ul>
+        <li>設定頁的文字說明改成可展開、可收起的下拉區塊，畫面更精簡。</li>
+        <li>安裝到手機、土地管理、匯出備份與匯入備份仍維持直接操作按鈕。</li>
+      </ul>
+
+      <b>v1.4.1</b>
+      <ul>
+        <li>藥名搭配作物時會完整比對所有登記產品，不再只查前 24 筆。</li>
+        <li>手機上的藥劑卡片會自動換行並限制在畫面內，不再被長文字撐寬。</li>
+        <li>在結果內再篩選廠牌後，點卡片會開啟正確的藥劑明細。</li>
+      </ul>
+
+      <b>v1.4.0</b>
+      <ul>
+        <li>卡片同時顯示商品名與普通名，並把搜尋字串標成黃底 —— 打「滅達」找「銅右滅達樂」不會再漏掉。</li>
+        <li>許可證已到期或已撤銷會明確標出來，不再當成有效藥劑。</li>
+        <li>不再依分類過濾搜尋結果，除草劑、殺蟎劑照樣列出並標示。</li>
+        <li>試算頁的結果清單加上筆數、篩選欄與比對進度，核准比對從 12 支提高到 40 支。</li>
+      </ul>
+
+      <b>v1.3.1</b>
+      <ul>
+        <li>查詢一次抓更多筆，被官方截斷時會明講，並新增「在結果裡再找」的篩選欄。</li>
+        <li>電腦上底部分頁改成左側欄。</li>
+        <li>紀錄表單增刪添加物時不會再跳回頁首。</li>
+      </ul>
+
+      <b>v1.3.0</b>
+      <ul>
+        <li>搜尋結果會標出「已核准」並排在前面，也看得到廠商跟許可證號，同名藥劑不再分不清。</li>
+        <li>查不到核准範圍時會說明原因，而且照樣可以完成施作紀錄。</li>
+        <li>紀錄新增「其他添加物」，光合菌、展著劑這類自己配的也記得下來。</li>
+        <li>紀錄頁改顯示實際稀釋倍數，並列出每支藥各自的可採收日。</li>
+      </ul>
+    </div>`;
+}
+
+const backupHelpHtml = () => `
+  <p>按下「匯出備份」之後，瀏覽器會下載一個 <code>.json</code> 檔，檔名是「田間用藥」加上今天的日期。</p>
+  <p><b>iPhone：</b>Safari 會先把檔案收進下載項目，你要再點一次「更多」或分享圖示，選「儲存到檔案」，挑一個自己找得到的位置。沒有做這一步的話，清掉 Safari 的下載記錄就會不見。</p>
+  <p><b>Android：</b>通常直接存進「下載」資料夾，用檔案管理員就找得到。</p>
+  <p>換手機時，把這個檔案傳到新手機（LINE 傳給自己、AirDrop、雲端硬碟都可以），在新手機上按「匯入備份」選它就好。相同的紀錄會被覆寫，本機原有而備份沒有的資料會保留。</p>`;
+
+const storageHelpHtml = (persisted) => `
+  <p>土地與施作紀錄存在這個瀏覽器的網站資料區，不會上傳到任何後台，我們也看不到。但以下情況資料會不見：</p>
+  <ul>
+    <li>清除這個網站的「網站資料」或瀏覽紀錄</li>
+    <li>使用無痕模式並關閉分頁</li>
+    <li>換手機、換瀏覽器</li>
+    <li>手機空間嚴重不足時被系統清理</li>
+  </ul>
+  <p><b>${persisted ? '這台裝置已取得持久儲存，被系統自動清理的機率較低。' : '這台裝置尚未取得持久儲存權限，建議把網站安裝到主畫面。'}</b>
+  不論如何，重要的施作紀錄請定期匯出備份，或在記錄完成後一併加入手機行事曆。</p>`;
+
+const supportHelpHtml = (lineUrl) => `
+  <p>加入 LINE 好友，隨喜支持。您的鼓勵是開發者持續維護與更新的動力💪</p>
+  <a class="modal-action" href="${esc(lineUrl)}" target="_blank" rel="noreferrer">開啟 LINE</a>`;
+
+const responsibilityHelpHtml = (aphiaUrl) => `
+  <p>藥劑資料取自農業部「農藥資料查詢」及動植物防疫檢疫署登記資訊，每週更新。官方也明確提醒，公開使用範圍僅供參考，實際施藥應依產品標示及最新公告。</p>
+  <p><b>搜尋結果不做分類過濾。</b>除草劑、殺蟎劑，以及許可證已到期或已撤銷的，都會照樣列出來並標示狀態 —— 把你手上可能有的藥藏起來，比列出來讓你自己判斷更危險。</p>
+  <p>本工具不替代農藥標示、專業診斷或農業主管機關指導。若作物、病蟲害或單位無法確定，請先向農業改良場、農會或合格農藥販賣業者確認。</p>
+  <a href="${esc(aphiaUrl)}" target="_blank" rel="noreferrer">前往官方農藥資訊服務網</a>`;
+
+function settingDisclosureHtml({ title, hint, content }) {
+  return `
+    <details class="setting-disclosure">
+      <summary class="setting-row">
+        <span><b>${title}</b><small>${hint}</small></span><i aria-hidden="true">⌄</i>
+      </summary>
+      <div class="setting-panel">${content}</div>
+    </details>`;
+}
+
+export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCount, persisted, dbError }) {
   return `
     <section class="view">
       <div class="page-title">
@@ -737,42 +815,37 @@ export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, pers
         <span><b>📥 匯入備份</b><small>換手機時把資料帶回來</small></span><i>›</i>
       </button>
 
-      <article class="about-card">
-        <h3>💾 匯出的檔案跑去哪了</h3>
-        <p>按下「匯出備份」之後，瀏覽器會下載一個 <code>.json</code> 檔，檔名是「田間用藥」加上今天的日期。</p>
-        <p><b>iPhone：</b>Safari 會先把檔案收進下載項目，你要再點一次「更多」或分享圖示，選「儲存到檔案」，挑一個自己找得到的位置。沒有做這一步的話，清掉 Safari 的下載記錄就會不見。</p>
-        <p><b>Android：</b>通常直接存進「下載」資料夾，用檔案管理員就找得到。</p>
-        <p>換手機時，把這個檔案傳到新手機（LINE 傳給自己、AirDrop、雲端硬碟都可以），在新手機上按「匯入備份」選它就好。相同的紀錄會被覆寫，本機原有而備份沒有的資料會保留。</p>
-      </article>
+      ${settingDisclosureHtml({
+        title: '💾 匯出的檔案跑去哪了',
+        hint: 'iPhone 與 Android 的備份位置',
+        content: backupHelpHtml(),
+      })}
 
-      <article class="about-card">
-        <h3>🔒 資料會在什麼時候消失</h3>
-        <p>土地與施作紀錄存在這個瀏覽器的網站資料區，不會上傳到任何後台，我們也看不到。但以下情況資料會不見：</p>
-        <ul>
-          <li>清除這個網站的「網站資料」或瀏覽紀錄</li>
-          <li>使用無痕模式並關閉分頁</li>
-          <li>換手機、換瀏覽器</li>
-          <li>手機空間嚴重不足時被系統清理</li>
-        </ul>
-        <p><b>${persisted ? '這台裝置已取得持久儲存，被系統自動清理的機率較低。' : '這台裝置尚未取得持久儲存權限，建議把網站安裝到主畫面。'}</b>
-        不論如何，重要的施作紀錄請定期匯出備份，或在記錄完成後一併加入手機行事曆。</p>
-      </article>
+      ${settingDisclosureHtml({
+        title: '🔒 資料會在什麼時候消失',
+        hint: persisted ? '這台裝置已取得持久儲存' : '了解本機保存與備份時機',
+        content: storageHelpHtml(persisted),
+      })}
 
-      <button class="setting-row" data-action="modal" data-modal="release">
-        <span><b>🆕 版本更新摘要</b><small>${esc(version)}</small></span><i>›</i>
-      </button>
+      <div class="section-row"><h3>📖 說明與關於</h3><span>點開閱讀</span></div>
 
-      <button class="setting-row" data-action="modal" data-modal="support">
-        <span><b>買杯咖啡支持☕</b><small>加LINE好友，給開發者一點鼓勵~</small></span><i>›</i>
-      </button>
+      ${settingDisclosureHtml({
+        title: '🆕 版本更新摘要',
+        hint: esc(version),
+        content: releaseLogHtml(),
+      })}
 
-      <article class="about-card">
-        <h3>📖 資料與責任說明</h3>
-        <p>藥劑資料取自農業部「農藥資料查詢」及動植物防疫檢疫署登記資訊，每週更新。官方也明確提醒，公開使用範圍僅供參考，實際施藥應依產品標示及最新公告。</p>
-        <p><b>搜尋結果不做分類過濾。</b>除草劑、殺蟎劑，以及許可證已到期或已撤銷的，都會照樣列出來並標示狀態 —— 把你手上可能有的藥藏起來，比列出來讓你自己判斷更危險。</p>
-        <p>本工具不替代農藥標示、專業診斷或農業主管機關指導。若作物、病蟲害或單位無法確定，請先向農業改良場、農會或合格農藥販賣業者確認。</p>
-        <a href="${aphiaUrl}" target="_blank" rel="noreferrer">前往官方農藥資訊服務網</a>
-      </article>
+      ${settingDisclosureHtml({
+        title: '📖 資料與責任說明',
+        hint: '資料來源、許可狀態與使用提醒',
+        content: responsibilityHelpHtml(aphiaUrl),
+      })}
+
+      ${settingDisclosureHtml({
+        title: '買杯咖啡支持☕',
+        hint: '加 LINE 好友，給開發者一點鼓勵',
+        content: supportHelpHtml(lineUrl),
+      })}
     </section>`;
 }
 
@@ -1198,38 +1271,7 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
     release: `
       <span class="eyebrow">版本更新 🆕</span>
       <h2>${esc(version)}</h2>
-      <div class="release-log">
-        <b>v1.4.1・這一版</b>
-        <ul>
-          <li>藥名搭配作物時會完整比對所有登記產品，不再只查前 24 筆。</li>
-          <li>手機上的藥劑卡片會自動換行並限制在畫面內，不再被長文字撐寬。</li>
-          <li>在結果內再篩選廠牌後，點卡片會開啟正確的藥劑明細。</li>
-        </ul>
-
-        <b>v1.4.0</b>
-        <ul>
-          <li>卡片同時顯示商品名與普通名，並把搜尋字串標成黃底 —— 打「滅達」找「銅右滅達樂」不會再漏掉。</li>
-          <li>許可證已到期或已撤銷會明確標出來，不再當成有效藥劑。</li>
-          <li>不再依分類過濾搜尋結果，除草劑、殺蟎劑照樣列出並標示。</li>
-          <li>試算頁的結果清單加上筆數、篩選欄與比對進度，核准比對從 12 支提高到 40 支。</li>
-        </ul>
-
-        <b>v1.3.1</b>
-        <ul>
-          <li>查詢一次抓更多筆，被官方截斷時會明講，並新增「在結果裡再找」的篩選欄。</li>
-          <li>電腦上底部分頁改成左側欄。</li>
-          <li>紀錄表單增刪添加物時不會再跳回頁首。</li>
-        </ul>
-
-        <b>v1.3.0</b>
-        <ul>
-          <li>搜尋結果會標出「已核准」並排在前面，也看得到廠商跟許可證號，同名藥劑不再分不清。</li>
-          <li>查不到核准範圍時會說明原因，而且照樣可以完成施作紀錄。</li>
-          <li>紀錄新增「其他添加物」，光合菌、展著劑這類自己配的也記得下來。</li>
-          <li>紀錄頁改顯示實際稀釋倍數，並列出每支藥各自的可採收日。</li>
-        </ul>
-
-      </div>`,
+      ${releaseLogHtml()}`,
     install: `
       <span class="eyebrow">安裝到手機 📲</span>
       <h2>把田間用藥帶著走</h2>
@@ -1238,8 +1280,7 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
     support: `
       <span class="eyebrow">謝謝支持與鼓勵💛</span>
       <h2>買杯咖啡支持☕</h2>
-      <p>加入LINE好友，隨喜支持，您的鼓勵是開發者持續維護與更新的動力💪</p>
-      <a class="modal-action" href="${lineUrl}" target="_blank" rel="noreferrer">開啟 LINE</a>`,
+      ${supportHelpHtml(lineUrl)}`,
     notice: `
       <span class="eyebrow">提醒</span>
       <h2>${esc(message?.title || '')}</h2>

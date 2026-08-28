@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { drugCardHtml, esc, highlight } from './views.js';
+import { drugCardHtml, esc, highlight, settingsViewHtml } from './views.js';
 
 describe('highlight：標出搜尋字串', () => {
   it('標出中間的片段', () => {
@@ -138,5 +138,37 @@ describe('drugCardHtml：過期與撤銷要標出來', () => {
     const valid = drugCardHtml(銅右滅達樂, 'pick', '', false, undefined, '');
     assert.ok(!valid.includes('inactive'));
     assert.ok(!valid.includes('status-tag'));
+  });
+});
+
+describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
+  const html = settingsViewHtml({
+    version: 'v1.4.2',
+    aphiaUrl: 'https://example.com/aphia',
+    lineUrl: 'https://example.com/line',
+    fieldCount: 2,
+    appCount: 5,
+    persisted: true,
+    dbError: '',
+  });
+
+  it('四個直接操作維持按鈕', () => {
+    assert.ok(html.includes('data-action="install"'));
+    assert.ok(html.includes('data-action="open-fields"'));
+    assert.ok(html.includes('data-action="export-backup"'));
+    assert.ok(html.includes('data-action="import-backup"'));
+  });
+
+  it('五項文字說明改成可展開區塊', () => {
+    assert.equal((html.match(/<details class="setting-disclosure">/g) || []).length, 5);
+    assert.ok(html.includes('匯出的檔案跑去哪了'));
+    assert.ok(html.includes('資料會在什麼時候消失'));
+    assert.ok(html.includes('版本更新摘要'));
+    assert.ok(html.includes('資料與責任說明'));
+    assert.ok(html.includes('買杯咖啡支持'));
+  });
+
+  it('設定頁不再用彈窗按鈕打開版本與支持內容', () => {
+    assert.ok(!html.includes('data-action="modal"'));
   });
 });

@@ -239,6 +239,34 @@ mark{background:#fff0b8;color:var(--ink);border-radius:3px;padding:0 1px;font-we
   .drug-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 
+/* 設定頁：說明內容收進可展開的下拉區塊 */
+.setting-disclosure{margin:0 0 10px}
+.setting-disclosure>summary{list-style:none;margin-bottom:0}
+.setting-disclosure>summary::-webkit-details-marker{display:none}
+.setting-disclosure>summary i{transition:transform .18s ease}
+.setting-disclosure[open]>summary{
+  border-radius:17px 17px 0 0;
+  border-bottom-color:transparent;
+  background:var(--sunken);
+}
+.setting-disclosure[open]>summary i{transform:rotate(180deg)}
+.setting-panel{
+  margin-top:-1px;
+  padding:16px 18px 18px;
+  border:1px solid var(--rule);
+  border-top:1px dashed var(--rule);
+  border-radius:0 0 17px 17px;
+  background:var(--paper);
+  animation:rise .18s ease;
+}
+.setting-panel p,.setting-panel li{font-size:13px;color:var(--muted)}
+.setting-panel p:last-child{margin-bottom:0}
+.setting-panel ul{margin:8px 0;padding-left:20px}
+.setting-panel li{margin-bottom:3px}
+.setting-panel code{background:var(--sunken);border-radius:6px;padding:1px 6px;font-size:12px}
+.setting-panel>a:not(.modal-action){display:inline-flex;min-height:44px;align-items:center;color:var(--herb);font-weight:700}
+.setting-panel .release-log{max-height:none}
+
 /* 試算頁結果清單：拉高一點，小框太難找東西 */
 .result-list{max-height:360px}
 .compact-field{margin-bottom:8px}

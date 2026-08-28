@@ -50,7 +50,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.4.1';
+const VERSION = 'v1.4.2';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -174,6 +174,7 @@ const views = {
     settingsViewHtml({
       version: VERSION,
       aphiaUrl: APHIA_URL,
+      lineUrl: LINE_URL,
       fieldCount: state.fields.length,
       appCount: state.applications.length,
       persisted: state.persisted,
