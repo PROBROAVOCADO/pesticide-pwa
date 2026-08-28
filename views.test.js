@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { drugCardHtml, esc, highlight, settingsViewHtml } from './views.js';
+import { drugCardHtml, esc, highlight, recordFormHtml, recordGuidanceHtml, settingsViewHtml } from './views.js';
 
 describe('highlight：標出搜尋字串', () => {
   it('標出中間的片段', () => {
@@ -143,7 +143,7 @@ describe('drugCardHtml：過期與撤銷要標出來', () => {
 
 describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
   const html = settingsViewHtml({
-    version: 'v1.4.2',
+    version: 'v1.4.4',
     aphiaUrl: 'https://example.com/aphia',
     lineUrl: 'https://example.com/line',
     fieldCount: 2,
@@ -170,5 +170,64 @@ describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
 
   it('設定頁不再用彈窗按鈕打開版本與支持內容', () => {
     assert.ok(!html.includes('data-action="modal"'));
+  });
+});
+
+const recordDraft = {
+  id: null,
+  date: '2026-08-29',
+  time: '08:00',
+  fieldName: '五分地',
+  crop: '酪梨',
+  area: 0.5,
+  unit: 'ha',
+  mode: 'tank',
+  water: 750,
+  additives: [],
+  harvestDate: null,
+  harvestDays: null,
+  harvestUnknown: false,
+  error: '',
+  drugs: [{
+    name: '測試藥劑',
+    target: '炭疽病',
+    dosePerHa: '500-1000 CC',
+    dilution: '2000倍',
+    amount: '',
+    amountUnit: '毫升',
+    water: '',
+    phi: '7天',
+    interval: '7天',
+  }],
+};
+
+describe('recordGuidanceHtml：面積用量是主建議，實際數字另行檢查', () => {
+  it('先顯示半公頃換算的 250～500 毫升，空白實際用量不會被冒充成紀錄', () => {
+    const html = recordGuidanceHtml(recordDraft, recordDraft.drugs[0]);
+    assert.ok(html.includes('依面積換算的標示用量'));
+    assert.ok(html.includes('250 毫升 ～ 500 毫升'));
+    assert.ok(html.includes('不會自動填成實際紀錄'));
+  });
+
+  it('750 公升配 250 毫升時，面積用量符合但另行警告過度稀釋', () => {
+    const drug = { ...recordDraft.drugs[0], amount: '250' };
+    const html = recordGuidanceHtml(recordDraft, drug);
+    assert.ok(html.includes('面積用量符合'));
+    assert.ok(html.includes('實際約 3,000 倍，稀釋過度'));
+    assert.ok(html.includes('防治效果可能不足'));
+  });
+
+  it('超過面積上限時明講增加用水不能抵銷', () => {
+    const drug = { ...recordDraft.drugs[0], amount: '600' };
+    const html = recordGuidanceHtml({ ...recordDraft, water: 1500 }, drug);
+    assert.ok(html.includes('超過面積用量上限'));
+    assert.ok(html.includes('增加用水不能抵銷總用藥超量'));
+    assert.ok(html.includes('殘留超標'));
+  });
+
+  it('表單的實際用量維持空白，並放入可即時更新的檢查區', () => {
+    const html = recordFormHtml(recordDraft);
+    assert.ok(html.includes('data-record-guidance="0"'));
+    assert.ok(html.includes('data-field="record-amount" data-idx="0" value=""'));
   });
 });

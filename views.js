@@ -5,7 +5,7 @@
  * 所有動態內容一律經過 esc()，因為官方資料會直接進 innerHTML。
  */
 
-import { AREA_UNITS, actualDilution, calcRange, formatRange, formatWater } from './calc.js';
+import { AREA_UNITS, actualDilution, assessApplication, calcRange, formatRange, formatWater, toHectares } from './calc.js';
 import { classTone, drugIdentity, drugSubtitle, drugTitle, license, licenseStatus, text } from './moa.js';
 import {
   addDays,
@@ -711,7 +711,20 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.4.2・這一版</b>
+      <b>v1.4.4・這一版</b>
+      <ul>
+        <li>施作紀錄改以土地面積換算的標示用量作為主要建議，不再自動預填成實際用量。</li>
+        <li>填入實際藥量與用水後，分開檢查總用藥量、濃度過高與稀釋過度，並顯示對應風險。</li>
+        <li>只有稀釋倍數、沒有每公頃用量的資料，才會改用實際用水量反推參考藥量。</li>
+      </ul>
+
+      <b>v1.4.3</b>
+      <ul>
+        <li>修正手機點入搜尋或輸入欄位時，整個頁面被瀏覽器自動放大的問題。</li>
+        <li>保留使用者手動雙指縮放，閱讀小字時仍可自行放大。</li>
+      </ul>
+
+      <b>v1.4.2</b>
       <ul>
         <li>設定頁的文字說明改成可展開、可收起的下拉區塊，畫面更精簡。</li>
         <li>安裝到手機、土地管理、匯出備份與匯入備份仍維持直接操作按鈕。</li>
@@ -1017,6 +1030,101 @@ export function fieldFormHtml(form) {
 /* 施作紀錄表單                                                        */
 /* ------------------------------------------------------------------ */
 
+const formatLooseAmount = (range) => {
+  const round = (n) => Math.round(n * 10) / 10;
+  const min = round(range.min);
+  const max = round(range.max);
+  return min === max ? `${min} 公克或毫升` : `${min} ～ ${max} 公克或毫升`;
+};
+
+const dilutionLabel = (range) => {
+  if (!range) return '';
+  const min = Math.round(range.min).toLocaleString('en-US');
+  const max = Math.round(range.max).toLocaleString('en-US');
+  return min === max ? `${min} 倍` : `${min} ～ ${max} 倍`;
+};
+
+const guidanceAlert = (tone, title, copy) => `
+  <div class="guidance-alert ${tone}" role="status">
+    <b>${esc(title)}</b>
+    <span>${esc(copy)}</span>
+  </div>`;
+
+/**
+ * 本次施作的即時參考：面積用量是主建議，稀釋倍數是第二層檢查。
+ * 這段可以單獨重畫，避免使用者輸入時游標被整張表單重建。
+ */
+export function recordGuidanceHtml(draft, drug) {
+  const area = Number(draft.area) || 0;
+  const areaHa = toHectares(area, draft.unit);
+  const water = draft.mode === 'separate' ? Number(drug.water) || 0 : Number(draft.water) || 0;
+  const check = assessApplication(
+    drug.dosePerHa,
+    drug.dilution,
+    areaHa,
+    water,
+    drug.amount,
+    drug.amountUnit,
+  );
+
+  let reference = '';
+  if (check.range.byArea) {
+    const areaText = `${area || '—'} ${AREA_UNIT_LABEL[draft.unit] || draft.unit || ''}`.trim();
+    const waterHint = check.range.suggestedWater
+      ? `<p class="guidance-water"><b>稀釋參考用水</b>${esc(formatWater(check.range.suggestedWater))}<small>依標示倍數換算；樹冠、噴具與覆蓋需求可以改變實際用水，但不能因此超過上方的面積用量。</small></p>`
+      : '';
+    reference = `
+      <div class="dose-reference">
+        <span>依面積換算的標示用量</span>
+        <strong>${esc(formatRange(check.range.byArea, check.range.base))}</strong>
+        <small>依 ${esc(areaText)} 與「每公頃 ${esc(drug.dosePerHa)}」換算，不會自動填成實際紀錄。</small>
+        ${waterHint}
+      </div>`;
+  } else if (check.range.kind === 'water-only') {
+    reference = `
+      <div class="dose-reference secondary">
+        <span>僅能依用水量反推</span>
+        <strong>${esc(formatLooseAmount(check.range.byWater))}</strong>
+        <small>此筆官方資料沒有可計算的每公頃用量，才以 ${esc(water)} 公升與標示稀釋倍數反推；請再核對產品標示。</small>
+      </div>`;
+  } else {
+    reference = `
+      <div class="dose-reference secondary">
+        <span>沒有可計算的標示用量</span>
+        <small>請依產品標示與實際施作填寫；App 不會自行猜測數字。</small>
+      </div>`;
+  }
+
+  const alerts = [];
+  if (check.doseStatus === 'ok') {
+    alerts.push(guidanceAlert('ok', '面積用量符合', '實際總用藥量在面積換算的標示範圍內。'));
+  } else if (check.doseStatus === 'below') {
+    alerts.push(guidanceAlert('warn', '低於面積用量下限', '可能達不到登記的防治效果，請核對實際倒入量與施作面積。'));
+  } else if (check.doseStatus === 'above') {
+    alerts.push(guidanceAlert('danger', '超過面積用量上限', '增加用水不能抵銷總用藥超量；可能提高殘留超標、作物與環境風險，請立即核對產品標示。'));
+  } else if (check.doseStatus === 'unit-mismatch') {
+    alerts.push(guidanceAlert('danger', '用量單位需要確認', `標示是以${check.range.base}計算，目前填的是${drug.amountUnit}，無法可靠比較總用藥量。`));
+  }
+
+  const actualText = check.actualFactor ? Math.round(check.actualFactor).toLocaleString('en-US') : '';
+  const labelText = dilutionLabel(check.dilution);
+  if (check.dilutionStatus === 'ok') {
+    alerts.push(guidanceAlert('ok', `實際約 ${actualText} 倍`, `落在標示稀釋範圍 ${labelText} 內。`));
+  } else if (check.dilutionStatus === 'too-concentrated') {
+    alerts.push(guidanceAlert('danger', `實際約 ${actualText} 倍，濃度過高`, `濃於標示的 ${labelText}，藥害與施作者暴露風險可能增加。`));
+  } else if (check.dilutionStatus === 'too-dilute') {
+    alerts.push(guidanceAlert('warn', `實際約 ${actualText} 倍，稀釋過度`, `稀於標示的 ${labelText}，通常主要是防治效果可能不足，不是用水本身造成藥害。`));
+  } else if (check.dilutionStatus === 'no-water') {
+    alerts.push(guidanceAlert('info', '尚未檢查稀釋倍數', '填入實際用水量後，才算得出當次真正的稀釋倍數。'));
+  }
+
+  const prompt = !check.actual
+    ? '<p class="guidance-prompt">請在上方參考建議後，於下方填入當天真正使用的藥量；留白代表尚未確認。</p>'
+    : '';
+
+  return `${reference}${prompt}${alerts.length ? `<div class="guidance-checks">${alerts.join('')}</div>` : ''}`;
+}
+
 export function recordFormHtml(draft) {
   const drugRows = draft.drugs
     .map(
@@ -1026,7 +1134,11 @@ export function recordFormHtml(draft) {
           <strong>${esc(d.name)}</strong>
           ${draft.drugs.length > 1 ? `<button type="button" class="remove" data-action="record-drug-remove" data-idx="${i}">－ 移除</button>` : ''}
         </div>
-        <span class="record-drug-sub">${esc(d.target || '—')}${d.dilution ? `・建議稀釋 ${esc(d.dilution)}` : ''}</span>
+        <span class="record-drug-sub">${esc(d.target || '—')}${d.dilution ? `・標示稀釋 ${esc(d.dilution)}` : ''}</span>
+
+        <div class="record-guidance" data-record-guidance="${i}" aria-live="polite">
+          ${recordGuidanceHtml(draft, d)}
+        </div>
 
         <div class="two-fields">
           <label class="field">
@@ -1048,7 +1160,6 @@ export function recordFormHtml(draft) {
              </label>`
           : ''}
 
-        ${d.suggestion ? `<p class="suggestion">試算建議：${esc(d.suggestion)}</p>` : ''}
         <dl class="check-rows">
           <div><dt>安全採收期</dt><dd>${esc(d.phi || '未提供')}</dd></div>
           <div><dt>施藥間隔</dt><dd>${esc(d.interval || '未提供')}</dd></div>
@@ -1105,7 +1216,7 @@ export function recordFormHtml(draft) {
     title: draft.id ? '編輯施作紀錄' : '記下這次施作',
     closeAction: 'close-overlay',
     body: `
-      <p class="legal-note">保存的是你確認過的實際用量，不是試算值。試算結果只放在旁邊當參考。</p>
+      <p class="legal-note">面積換算只當作標示參考，不會自動寫進實際用量。保存的是你親自確認過的施作數字。</p>
 
       <label class="field">
         <span>施作日期</span>

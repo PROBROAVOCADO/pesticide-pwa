@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { actualDilution, calcRange, intersect, intersectAll, toBaseAmount, toBaseDose, waterRangeFor, doseRangeForWater, parseDilution, parseDose, toHectares } from './calc.js';
+import { actualDilution, assessApplication, calcRange, intersect, intersectAll, toBaseAmount, toBaseDose, waterRangeFor, doseRangeForWater, parseDilution, parseDose, toHectares } from './calc.js';
 
 describe('parseDose：官方「每公頃使用用藥量」欄位', () => {
   it('讀得出區間與單位', () => {
@@ -9,6 +9,11 @@ describe('parseDose：官方「每公頃使用用藥量」欄位', () => {
 
   it('單一數值時 min 與 max 相同', () => {
     assert.deepEqual(parseDose('500 毫升'), { min: 500, max: 500, unit: '毫升' });
+  });
+
+  it('田間常寫的 CC 也視為毫升', () => {
+    assert.deepEqual(parseDose('500-1000 CC'), { min: 500, max: 1000, unit: '毫升' });
+    assert.deepEqual(parseDose('500 ml'), { min: 500, max: 500, unit: '毫升' });
   });
 
   it('去掉千分位逗號', () => {
@@ -258,5 +263,50 @@ describe('actualDilution：由實際藥量與水量反推真正的稀釋倍數',
     assert.equal(actualDilution('500', '公克', 0), null);
     assert.equal(actualDilution('', '公克', 500), null);
     assert.equal(actualDilution('500', '公克', null), null);
+  });
+});
+
+describe('assessApplication：施作紀錄以面積用量為主、稀釋倍數為輔', () => {
+  it('半公頃最低 250 毫升、500 公升水時，面積與 2000 倍都符合', () => {
+    const r = assessApplication('500-1000 CC', '2000倍', 0.5, 500, 250, '毫升');
+    assert.deepEqual(r.range.byArea, { min: 250, max: 500 });
+    assert.equal(r.doseStatus, 'ok');
+    assert.equal(r.actualFactor, 2000);
+    assert.equal(r.dilutionStatus, 'ok');
+  });
+
+  it('用水增加到 750 公升但仍用 250 毫升：面積用量符合、濃度過稀', () => {
+    const r = assessApplication('500-1000 CC', '2000倍', 0.5, 750, 250, '毫升');
+    assert.equal(r.doseStatus, 'ok');
+    assert.equal(r.actualFactor, 3000);
+    assert.equal(r.dilutionStatus, 'too-dilute');
+  });
+
+  it('總用藥超過面積上限要獨立判定，不能靠加水抵銷', () => {
+    const r = assessApplication('500-1000 CC', '2000倍', 0.5, 1500, 600, '毫升');
+    assert.equal(r.doseStatus, 'above');
+  });
+
+  it('低於面積下限會提示可能不足以達到防治效果', () => {
+    const r = assessApplication('500-1000 CC', '2000倍', 0.5, 500, 200, '毫升');
+    assert.equal(r.doseStatus, 'below');
+  });
+
+  it('同一藥量用水太少時會判定濃度過高', () => {
+    const r = assessApplication('500-1000 CC', '2000倍', 0.5, 200, 250, '毫升');
+    assert.equal(r.doseStatus, 'ok');
+    assert.equal(r.dilutionStatus, 'too-concentrated');
+  });
+
+  it('實際用量單位與標示基礎單位不同時不硬比', () => {
+    const r = assessApplication('500-1000 CC', '2000倍', 0.5, 500, 250, '公克');
+    assert.equal(r.doseStatus, 'unit-mismatch');
+  });
+
+  it('只有稀釋倍數時仍能檢查濃度，但不假裝有面積用量', () => {
+    const r = assessApplication('-', '2000倍', 0.5, 500, 250, '毫升');
+    assert.equal(r.range.kind, 'water-only');
+    assert.equal(r.doseStatus, 'unavailable');
+    assert.equal(r.dilutionStatus, 'ok');
   });
 });

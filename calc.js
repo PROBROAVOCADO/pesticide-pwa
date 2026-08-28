@@ -40,12 +40,12 @@ export function parseDose(raw) {
 
   const unit = /公斤|kg/i.test(clean)
     ? '公斤'
-    : /公升|l(?:iter)?/i.test(clean)
-      ? '公升'
-      : /公克|克|g/i.test(clean)
-        ? '公克'
-        : /毫升|ml/i.test(clean)
-          ? '毫升'
+    : /毫升|ml|c\.?c\.?/i.test(clean)
+      ? '毫升'
+      : /公升|\bl(?:iter)?s?\b/i.test(clean)
+        ? '公升'
+        : /公克|克|\bg\b/i.test(clean)
+          ? '公克'
           : '';
 
   return unit ? { min: nums[0], max: nums[1] ?? nums[0], unit } : null;
@@ -186,6 +186,43 @@ export function actualDilution(amount, unit, waterLiters) {
   const water = Number(waterLiters);
   if (!base || !Number.isFinite(water) || water <= 0) return null;
   return Math.round((water * 1000) / base.value);
+}
+
+/**
+ * 檢查一次「實際施作」是否落在標示範圍內。
+ *
+ * 面積用量與稀釋倍數分開判斷：
+ * - 面積用量關係到整塊地實際用了多少藥，優先顯示。
+ * - 稀釋倍數用來補充檢查濃度，不能拿加水來掩蓋面積用量超標。
+ */
+export function assessApplication(rawDose, rawDilution, areaHa, waterLiters, amount, unit) {
+  const range = calcRange(rawDose, rawDilution, areaHa, waterLiters);
+  const dilution = parseDilution(rawDilution);
+  const actual = toBaseAmount(amount, unit);
+  const actualFactor = actualDilution(amount, unit, waterLiters);
+
+  let doseStatus = range.byArea ? 'missing' : 'unavailable';
+  if (range.byArea && actual) {
+    if (actual.base !== range.base) {
+      doseStatus = 'unit-mismatch';
+    } else {
+      // 顯示值會四捨五入到 0.1，邊界保留半個顯示刻度，避免「照畫面填仍被判超標」。
+      const displayMargin = 0.051;
+      if (actual.value < range.byArea.min - displayMargin) doseStatus = 'below';
+      else if (actual.value > range.byArea.max + displayMargin) doseStatus = 'above';
+      else doseStatus = 'ok';
+    }
+  }
+
+  let dilutionStatus = dilution ? 'missing' : 'unavailable';
+  if (dilution && actual && !(Number(waterLiters) > 0)) dilutionStatus = 'no-water';
+  if (dilution && actualFactor) {
+    if (actualFactor < dilution.min) dilutionStatus = 'too-concentrated';
+    else if (actualFactor > dilution.max) dilutionStatus = 'too-dilute';
+    else dilutionStatus = 'ok';
+  }
+
+  return { range, dilution, actual, actualFactor, doseStatus, dilutionStatus };
 }
 
 /** 顯示基本單位的數量：滿 1000 就升階成公斤／公升，田間比較好量。 */

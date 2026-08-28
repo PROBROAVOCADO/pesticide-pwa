@@ -1,4 +1,4 @@
-import { calcRange, formatRange, formatWater, toHectares } from './calc.js';
+import { parseDose, toBaseDose, toHectares } from './calc.js';
 import {
   addFavorite,
   allCached,
@@ -39,6 +39,7 @@ import {
   modalHtml,
   recordDetailHtml,
   recordFormHtml,
+  recordGuidanceHtml,
   recordsViewHtml,
   searchResultsHtml,
   searchViewHtml,
@@ -50,7 +51,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.4.2';
+const VERSION = 'v1.4.4';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -251,6 +252,16 @@ function renderOutputsOnly() {
     const holder = screenEl.querySelector(`[data-output="${item.id}"]`);
     if (holder) holder.innerHTML = itemOutputHtml(item, areaHa(), waterLiters());
   }
+}
+
+/** 只更新施作卡片裡的面積用量參考與實際濃度警示，保留正在輸入的游標。 */
+function renderRecordGuidanceOnly() {
+  if (state.overlay?.kind !== 'record-form') return;
+  const { draft } = state.overlay;
+  draft.drugs.forEach((drug, index) => {
+    const holder = overlayEl.querySelector(`[data-record-guidance="${index}"]`);
+    if (holder) holder.innerHTML = recordGuidanceHtml(draft, drug);
+  });
 }
 
 /** 只重畫搜尋結果，讓篩選欄的輸入框不被拆掉重建。 */
@@ -712,30 +723,10 @@ async function reloadApplications() {
   }
 }
 
-const round1 = (n) => String(Math.round(n * 10) / 10);
-
-/** 依目前試算結果，替一種藥劑準備預填的實際用量與參考值。 */
-function suggestAmount(range) {
-  const result = calcRange(
-    text(range['每公頃使用用藥量']),
-    text(range['稀釋倍數']),
-    areaHa(),
-    waterLiters(),
-  );
-
-  if (result.kind === 'cross' && result.agreed) {
-    return { amount: round1(result.agreed.min), unit: result.base, suggestion: formatRange(result.agreed, result.base) };
-  }
-  if (result.kind === 'cross') {
-    return { amount: '', unit: result.base, suggestion: `用水量需調整到 ${formatWater(result.suggestedWater)}` };
-  }
-  if (result.kind === 'area-only') {
-    return { amount: round1(result.byArea.min), unit: result.base, suggestion: formatRange(result.byArea, result.base) };
-  }
-  if (result.kind === 'water-only') {
-    return { amount: round1(result.byWater.min), unit: '公克', suggestion: `${round1(result.byWater.min)} 公克或毫升` };
-  }
-  return { amount: '', unit: '公克', suggestion: '' };
+/** 從標示的每公頃用量判斷最適合的實際用量單位；沒有資料時保守用公克。 */
+function amountUnitFor(range) {
+  const parsed = parseDose(text(range?.['每公頃使用用藥量']));
+  return (parsed && toBaseDose(parsed)?.base) || '公克';
 }
 
 function recomputeHarvest(draft) {
@@ -754,9 +745,6 @@ function openRecordForm() {
 
   const drugs = items.map((item) => {
     const range = item.ranges[item.selected];
-    const { amount, unit, suggestion } = range
-      ? suggestAmount(range)
-      : { amount: '', unit: '公克', suggestion: '' };
 
     return {
       name: drugTitle(item.drug),
@@ -770,10 +758,10 @@ function openRecordForm() {
       phi: range ? text(range['安全採收期']) : '',
       interval: range ? text(range['施藥間隔']) : '',
       offLabel: item.cropMissing || !range,
-      amount,
-      amountUnit: unit,
+      // 實際施用量必須由使用者照當天真正倒入的量填寫，不能讓試算值冒充紀錄。
+      amount: '',
+      amountUnit: amountUnitFor(range),
       water: '',
-      suggestion,
     };
   });
 
@@ -1226,9 +1214,11 @@ document.addEventListener('input', (event) => {
       break;
     case 'record-area':
       draft.area = value;
+      renderRecordGuidanceOnly();
       break;
     case 'record-water':
       draft.water = value;
+      renderRecordGuidanceOnly();
       break;
     case 'record-note':
       draft.note = value;
@@ -1238,9 +1228,11 @@ document.addEventListener('input', (event) => {
       break;
     case 'record-amount':
       draft.drugs[Number(idx)].amount = value;
+      renderRecordGuidanceOnly();
       break;
     case 'record-drug-water':
       draft.drugs[Number(idx)].water = value;
+      renderRecordGuidanceOnly();
       break;
     case 'additive-name':
       draft.additives[Number(idx)].name = value;
@@ -1279,8 +1271,10 @@ document.addEventListener('change', (event) => {
     state.overlay.form.unit = value;
   } else if (field === 'record-unit') {
     draft.unit = value;
+    renderRecordGuidanceOnly();
   } else if (field === 'record-amount-unit') {
     draft.drugs[Number(idx)].amountUnit = value;
+    renderRecordGuidanceOnly();
   } else if (field === 'record-date') {
     // 日期變了，參考採收日要跟著重算。
     draft.date = value;
