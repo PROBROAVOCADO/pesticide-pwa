@@ -70,11 +70,23 @@ export function uniqueDrugs(rows) {
 }
 
 /**
+ * 每個欄位一次跟官方要幾筆。
+ *
+ * 像「亞托敏」這種普通名稱，登記產品可以上百支。以前一次只要 80 筆，
+ * 排在後面的廠牌（例如大卡稱）會直接被截掉，而畫面上完全看不出來，
+ * 使用者只會以為那支藥沒登記 —— 這比查不到更危險。
+ */
+const MOA_TOP = 200;
+
+/**
  * 以普通名稱、廠牌名稱、農藥代號三個欄位同時查詢，再合併去重。
  *
  * 單一欄位失敗不影響其他欄位，但三個欄位全部失敗就要丟出錯誤 ——
  * 那代表連不上官方資料，不是「查無此藥」。
  * 分清楚這兩件事，離線備援才有機會接手。
+ *
+ * 回傳 { drugs, capped }。capped 表示至少有一個欄位被 MOA_TOP 截斷，
+ * 也就是「還有更多沒拿到」，畫面必須把這件事講出來。
  */
 export async function searchDrugs(query) {
   const q = String(query ?? '').trim();
@@ -84,7 +96,8 @@ export async function searchDrugs(query) {
     ['中文名稱', '廠牌名稱', '農藥代號'].map(async (field) => {
       const filter = encodeURIComponent(`${field} like ${q}`);
       try {
-        return { ok: true, rows: await fetchJson(`${MOA_API}?$top=80&$filter=${filter}`) };
+        const rows = await fetchJson(`${MOA_API}?$top=${MOA_TOP}&$filter=${filter}`);
+        return { ok: true, rows: Array.isArray(rows) ? rows : [] };
       } catch {
         return { ok: false, rows: [] };
       }
@@ -93,7 +106,20 @@ export async function searchDrugs(query) {
 
   if (batches.every((b) => !b.ok)) throw new Error('目前連不上農業部的資料服務');
 
-  return uniqueDrugs(batches.flatMap((b) => b.rows)).slice(0, 80);
+  return {
+    drugs: uniqueDrugs(batches.flatMap((b) => b.rows)),
+    capped: batches.some((b) => b.rows.length >= MOA_TOP),
+  };
+}
+
+/** 在已經拿到的結果裡再篩一次。查完普通名稱後想找特定廠牌時用。 */
+export function filterDrugs(drugs, keyword) {
+  const k = normalize(keyword);
+  if (!k) return drugs;
+  return drugs.filter((d) =>
+    ['廠牌名稱', '中文名稱', '廠商名稱', '農藥代號'].some((f) => normalize(text(d[f])).includes(k)) ||
+    normalize(license(d)).includes(k),
+  );
 }
 
 /**

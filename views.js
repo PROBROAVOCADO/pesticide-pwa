@@ -64,18 +64,27 @@ export function drugCardHtml(drug, action, dataAttr, compact, approval) {
 /* 藥劑查詢分頁                                                        */
 /* ------------------------------------------------------------------ */
 
-export function searchViewHtml({ query, crop, drugs, loading, message, note, allApproved }) {
-  const results = drugs.length
-    ? `${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
-       <div class="drug-grid">${drugs.map((d, i) => drugCardHtml(d, 'open-detail', `data-idx="${i}"`, false, allApproved ? 'yes' : undefined)).join('')}</div>`
-    : loading
-      ? ''
-      : `${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
-         <div class="welcome-card">
-           <b>🔍 可以查什麼？</b>
-           <p>上面填藥劑的普通名稱、商品廠牌或農藥代號，下面填作物。兩欄都填的話，只會列出真的核准用在這個作物上的藥，省得一支一支點開看。</p>
-           <p>點開藥劑後，可看有效成分、抗藥性代碼、核准作物、稀釋倍數與安全採收期。</p>
-         </div>`;
+export function searchViewHtml({
+  query,
+  crop,
+  filter,
+  drugs,
+  loading,
+  message,
+  note,
+  allApproved,
+  total,
+  matched,
+  shownLimit,
+}) {
+  // 結果多的時候給一個就地篩選欄：查完「亞托敏」再打「大卡」就能挑出想要的廠牌。
+  // 這個欄位放在表單裡而不是結果區 —— 結果重畫時輸入框才不會被拆掉，游標不會跳走。
+  const filterBox =
+    total > 8
+      ? `<label for="search-filter" class="sub-label">在這 ${total} 筆結果裡再找</label>
+         <input id="search-filter" class="wide-input" data-field="search-filter" value="${esc(filter)}"
+                placeholder="輸入廠牌、廠商或許可證號" />`
+      : '';
 
   return `
     <section class="view">
@@ -96,12 +105,46 @@ export function searchViewHtml({ query, crop, drugs, loading, message, note, all
         <input id="search-crop" class="wide-input" data-field="search-crop" value="${esc(crop)}"
                placeholder="例如：酪梨、番茄、水稻" />
 
+        ${filterBox}
+
         <small>${esc(message)}</small>
       </form>
 
-      ${results}
+      ${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
+
+      <div id="search-results">${searchResultsHtml({ drugs, loading, allApproved, total, matched, shownLimit })}</div>
     </section>`;
 }
+
+/**
+ * 只有結果卡片的部分。獨立出來，是為了讓篩選欄打字時只重畫這一塊 ——
+ * 整頁重畫會把輸入框拆掉重建，游標就跑掉了。
+ */
+export function searchResultsHtml({ drugs, loading, allApproved, total, matched, shownLimit }) {
+  const trimmed =
+    matched > shownLimit
+      ? `<p class="offline-note">符合的有 ${matched} 筆，畫面只列前 ${shownLimit} 筆。用上面的篩選欄再縮小範圍，就看得到其餘的。</p>`
+      : '';
+
+  return loading
+    ? ''
+    : drugs.length
+      ? `${trimmed}
+         <div class="drug-grid">${drugs
+           .map((d, i) => drugCardHtml(d, 'open-detail', `data-idx="${i}"`, false, allApproved ? 'yes' : undefined))
+           .join('')}</div>`
+      : total
+        ? `<div class="welcome-card">
+             <b>🔍 這 ${total} 筆裡沒有符合的</b>
+             <p>把上面的篩選欄清空，就能看回全部結果。</p>
+           </div>`
+        : `<div class="welcome-card">
+             <b>🔍 可以查什麼？</b>
+             <p>上面填藥劑的普通名稱、商品廠牌或農藥代號，下面填作物。兩欄都填的話，只會列出真的核准用在這個作物上的藥，省得一支一支點開看。</p>
+             <p>同一個成分常常有幾十個廠牌。查普通名稱（例如「亞托敏」）如果找不到你要的那支，直接打廠牌名稱（例如「大卡稱」）最快 👍</p>
+           </div>`;
+}
+
 
 /* ------------------------------------------------------------------ */
 /* 試算結果檢核卡                                                      */
@@ -443,8 +486,8 @@ export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
         完成施作並記錄
       </button>
       <p class="cta-note">${canRecord
-        ? '試算不會自動變成紀錄。實際噴完之後再按這裡，填入真正用掉的量。'
-        : '選好藥劑與防治用途之後，就可以把這次施作記下來。'}</p>
+        ? '試算不會自動變成紀錄。實際噴完之後再按這裡填真正用掉的量，也可以順手記下光合菌、展著劑這類自己加的東西 🧪'
+        : '選好藥劑之後就可以把這次施作記下來，連同自己加的微生物肥料一起 🧪'}</p>
 
       <div class="safety-card">
         <b>⚠️ 安全提醒</b>
@@ -1073,7 +1116,14 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
       <span class="eyebrow">版本更新 🆕</span>
       <h2>${esc(version)}</h2>
       <div class="release-log">
-        <b>v1.3.0・這一版</b>
+        <b>v1.3.1・這一版</b>
+        <ul>
+          <li>查詢一次抓更多筆，被官方截斷時會明講，並新增「在結果裡再找」的篩選欄。</li>
+          <li>電腦上底部分頁改成左側欄。</li>
+          <li>紀錄表單增刪添加物時不會再跳回頁首。</li>
+        </ul>
+
+        <b>v1.3.0</b>
         <ul>
           <li>搜尋結果會標出「已核准」並排在前面，也看得到廠商跟許可證號，同名藥劑不再分不清。</li>
           <li>查不到核准範圍時會說明原因，而且照樣可以完成施作紀錄。</li>
@@ -1085,13 +1135,6 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
         <ul>
           <li>查詢可以同時指定藥劑與作物。</li>
           <li>試算頁新增常用藥劑下拉，可釘選也會自動累積最近用過的。</li>
-        </ul>
-
-        <b>v1.1.0</b>
-        <ul>
-          <li>土地管理、施作紀錄與月曆，可推算參考最早採收日。</li>
-          <li>紀錄可複製或加入手機行事曆，另外提供匯出備份。</li>
-          <li>查過的藥劑會存在本機，沒訊號時仍可翻查。</li>
         </ul>
       </div>`,
     install: `

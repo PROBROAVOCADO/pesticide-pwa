@@ -19,7 +19,7 @@ import {
   saveField,
   searchCachedDrugs,
 } from './db.js';
-import { drugTitle, license, loadRanges, matchesCrop, searchDrugs, text } from './moa.js';
+import { drugTitle, filterDrugs, license, loadRanges, matchesCrop, searchDrugs, text } from './moa.js';
 import {
   buildIcs,
   buildRecordText,
@@ -39,6 +39,7 @@ import {
   recordDetailHtml,
   recordFormHtml,
   recordsViewHtml,
+  searchResultsHtml,
   searchViewHtml,
   settingsViewHtml,
   toastHtml,
@@ -48,9 +49,12 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.3.0';
+const VERSION = 'v1.3.1';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
+
+/** 一次最多畫幾張結果卡。再多手機捲起來會卡，用結果篩選欄縮小範圍即可。 */
+const SEARCH_DISPLAY_LIMIT = 120;
 
 /** 本機儲存的專屬前綴，避免與同帳號的其他 GitHub Pages 站台互相干擾。 */
 const APP_ID = 'field-meds';
@@ -100,7 +104,16 @@ const emptyItem = () => ({
 
 const state = {
   tab: 'search',
-  search: { query: '', crop: '', drugs: [], loading: false, message: '填藥劑名稱、作物，或兩個都填', note: '' },
+  search: {
+    query: '',
+    crop: '',
+    filter: '', // 在已取得的結果裡再篩一次（例如查完亞托敏再找大卡稱）
+    drugs: [],
+    loading: false,
+    message: '填藥劑名稱、作物，或兩個都填',
+    note: '',
+    capped: false,
+  },
   calc: { crop: '', area: '1', areaUnit: 'fen', water: '200', items: [emptyItem()], fieldId: '' },
   records: { month: new Date(), selected: null, filterFieldId: '' },
   fields: [],
@@ -131,7 +144,18 @@ const fileInput = document.getElementById('import-file');
 const canRecord = () => state.calc.items.some((i) => i.drug);
 
 const views = {
-  search: () => searchViewHtml({ ...state.search, allApproved: Boolean(state.search.crop.trim() && state.search.query.trim()) }),
+  search: () => {
+    const s = state.search;
+    const visible = filterDrugs(s.drugs, s.filter);
+    return searchViewHtml({
+      ...s,
+      drugs: visible.slice(0, SEARCH_DISPLAY_LIMIT),
+      total: s.drugs.length,
+      matched: visible.length,
+      shownLimit: SEARCH_DISPLAY_LIMIT,
+      allApproved: Boolean(s.crop.trim() && s.query.trim()),
+    });
+  },
   calc: () => calcViewHtml(state.calc, state.fields, areaHa(), canRecord(), favoriteOptions()),
   records: () =>
     recordsViewHtml({
@@ -162,8 +186,21 @@ function render() {
   renderOverlay();
 }
 
+/**
+ * 目前面板的識別。同一個面板重畫時要保住捲動位置 ——
+ * 在紀錄表單底部按「加一項添加物」卻被彈回頁首，是很惱人的事。
+ */
+const overlayKey = (o) => (o ? `${o.kind}:${o.id ?? o.modal ?? ''}` : '');
+
+let lastOverlayKey = '';
+
 function renderOverlay() {
   const o = state.overlay;
+  const key = overlayKey(o);
+  const sameSheet = key === lastOverlayKey;
+  const keepScroll = sameSheet ? (overlayEl.querySelector('.sheet')?.scrollTop ?? null) : null;
+  lastOverlayKey = key;
+
   if (!o) {
     overlayEl.innerHTML = '';
     return;
@@ -192,6 +229,9 @@ function renderOverlay() {
     overlayEl.innerHTML = modalHtml(o.modal, { version: VERSION, lineUrl: LINE_URL, message: o.message });
   }
 
+  // 同一個面板就停在原地，換了面板才回到頂端。
+  const sheet = overlayEl.querySelector('.sheet');
+  if (sheet) sheet.scrollTop = keepScroll ?? 0;
   overlayEl.scrollTop = 0;
 }
 
@@ -206,6 +246,22 @@ function renderOutputsOnly() {
     const holder = screenEl.querySelector(`[data-output="${item.id}"]`);
     if (holder) holder.innerHTML = itemOutputHtml(item, areaHa(), waterLiters());
   }
+}
+
+/** 只重畫搜尋結果，讓篩選欄的輸入框不被拆掉重建。 */
+function renderSearchResultsOnly() {
+  const holder = document.getElementById('search-results');
+  if (!holder) return;
+  const s = state.search;
+  const visible = filterDrugs(s.drugs, s.filter);
+  holder.innerHTML = searchResultsHtml({
+    drugs: visible.slice(0, SEARCH_DISPLAY_LIMIT),
+    loading: s.loading,
+    allApproved: Boolean(s.crop.trim() && s.query.trim()),
+    total: s.drugs.length,
+    matched: visible.length,
+    shownLimit: SEARCH_DISPLAY_LIMIT,
+  });
 }
 
 /** 只更新藥劑面板裡的使用範圍列表，同樣是為了保住輸入游標。 */
@@ -252,12 +308,12 @@ const notice = (title, body) => {
 
 async function searchWithFallback(query) {
   try {
-    const rows = await searchDrugs(query);
-    cacheDrugs(rows);
-    return { rows, fromCache: false };
+    const { drugs, capped } = await searchDrugs(query);
+    cacheDrugs(drugs);
+    return { rows: drugs, capped, fromCache: false };
   } catch (error) {
     const cached = await searchCachedDrugs(query);
-    if (cached.length) return { rows: cached, fromCache: true };
+    if (cached.length) return { rows: cached, capped: false, fromCache: true };
     throw error;
   }
 }
@@ -348,6 +404,8 @@ async function runMainSearch() {
   state.search.loading = true;
   state.search.drugs = [];
   state.search.note = '';
+  state.search.capped = false;
+  state.search.filter = '';
 
   // 只填作物：官方端無法用作物搜尋，只能翻本機查過的。
   if (!query) {
@@ -369,14 +427,22 @@ async function runMainSearch() {
   render();
 
   try {
-    const { rows, fromCache } = await searchWithFallback(query);
+    const { rows, capped, fromCache } = await searchWithFallback(query);
+    state.search.capped = capped;
 
     if (!crop) {
       state.search.drugs = rows;
       state.search.message = rows.length
         ? `找到 ${rows.length} 筆${fromCache ? '本機保存的' : '有效的殺菌／殺蟲'}藥劑`
         : '沒有找到仍有效且符合分類的藥劑';
-      if (fromCache) state.search.note = '目前連不上官方資料，以下是這台裝置查過的藥劑。';
+      const notes = [];
+      if (fromCache) notes.push('目前連不上官方資料，以下是這台裝置查過的藥劑。');
+      if (capped) {
+        notes.push(
+          '官方單次最多只給這麼多筆，可能還有沒列出來的產品。找不到想要的廠牌時，直接用廠牌名稱查（例如「大卡稱」）最準。',
+        );
+      }
+      state.search.note = notes.join('');
     } else {
       state.search.message = `找到 ${rows.length} 筆，正在逐一比對「${crop}」…`;
       render();
@@ -1099,6 +1165,10 @@ document.addEventListener('input', (event) => {
       break;
     case 'search-crop':
       state.search.crop = value;
+      break;
+    case 'search-filter':
+      state.search.filter = value;
+      renderSearchResultsOnly();
       break;
     case 'item-query':
       findItem(id).query = value;

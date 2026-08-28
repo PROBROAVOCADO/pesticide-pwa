@@ -148,3 +148,45 @@
 .field input,.field select{min-width:0}
 .field input[type=date],.field input[type=time]{width:100%;-webkit-appearance:none;appearance:none}
 .approve-tag.none{color:var(--brick);background:#fbf4ef;border:1px solid rgba(156,69,53,.3)}
+
+/* ------------------------------------------------------------------ */
+/* 桌面版：底部分頁改成左側欄                                          */
+/* ------------------------------------------------------------------ */
+@media (min-width:900px){
+  .bottom-tabs{
+    top:0;bottom:0;left:0;transform:none;
+    width:232px;height:100dvh;
+    flex-direction:column;justify-content:flex-start;gap:4px;
+    padding:22px 14px calc(22px + env(safe-area-inset-bottom));
+    border-top:0;border-right:1px solid var(--rule);
+    box-shadow:2px 0 18px rgba(70,58,38,.05);
+    background:var(--paper)
+  }
+  .bottom-tabs button{
+    flex:0 0 auto;min-height:52px;width:100%;
+    flex-direction:row;justify-content:flex-start;gap:13px;
+    padding:0 16px;border-radius:14px;font-size:15px;opacity:.75
+  }
+  .bottom-tabs button span{font-size:19px;width:22px;text-align:center}
+  .bottom-tabs button[aria-current=true]{background:#e8eedf;opacity:1}
+
+  .app-shell{margin-left:232px;max-width:none}
+  .topbar{max-width:820px;margin:0 auto;width:100%;padding-left:24px;padding-right:24px}
+  .screen{max-width:820px;margin:0 auto;width:100%;padding:0 24px 56px}
+
+  /* 面板在桌面上置中，不再從底部滑出 */
+  .sheet-backdrop{align-items:center;padding-left:232px}
+  .sheet{width:min(720px,100%);max-height:88dvh;border-radius:24px}
+  .sheet-handle{display:none}
+  .mini-modal{margin:0 auto}
+
+  #toast-host{left:232px;bottom:32px}
+
+  .drug-grid{grid-template-columns:1fr 1fr}
+  .field-chips{flex-wrap:wrap;overflow:visible}
+}
+
+/* 側邊欄夠寬時再拉開一點 */
+@media (min-width:1280px){
+  .topbar,.screen{max-width:900px}
+}
