@@ -161,6 +161,33 @@ export function calcRange(rawDose, rawDilution, areaHa, waterLiters) {
   return { kind: 'none' };
 }
 
+/**
+ * 把使用者填的實際用量換算成基本單位（公克或毫升）。
+ * 認不得的單位回 null —— 寧可不算，也不要算錯。
+ */
+export function toBaseAmount(amount, unit) {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const entry = UNIT_TABLE[unit];
+  if (!entry) return null;
+  return { value: value * entry.factor, base: entry.base };
+}
+
+/**
+ * 由實際用量與實際用水量，反推這一桶真正的稀釋倍數。
+ *
+ * 稀釋倍數 = 水量（毫升）÷ 藥量（公克或毫升）
+ *
+ * 這是紀錄頁要顯示的數字：官方標示的是「建議」，
+ * 但實際下田配出來的濃度才是那天真正發生的事。
+ */
+export function actualDilution(amount, unit, waterLiters) {
+  const base = toBaseAmount(amount, unit);
+  const water = Number(waterLiters);
+  if (!base || !Number.isFinite(water) || water <= 0) return null;
+  return Math.round((water * 1000) / base.value);
+}
+
 /** 顯示基本單位的數量：滿 1000 就升階成公斤／公升，田間比較好量。 */
 export function formatBase(value, base) {
   if (value >= 1000) {

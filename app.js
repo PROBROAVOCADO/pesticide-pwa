@@ -48,7 +48,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.2.0';
+const VERSION = 'v1.3.0';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -85,8 +85,14 @@ const emptyItem = () => ({
   id: nextItemId++,
   query: '',
   results: [],
+  approvals: null, // 與 results 等長：'yes' | 'no' | undefined
+  scanning: false,
+  scanned: 0,
+  scanTotal: 0,
   drug: null,
   ranges: [],
+  rangeStatus: '', // ok | no-link | empty | failed
+  cropMissing: false,
   selected: 0,
   loading: false,
   error: '',
@@ -120,10 +126,12 @@ const fileInput = document.getElementById('import-file');
 /* 渲染                                                                */
 /* ------------------------------------------------------------------ */
 
-const canRecord = () => state.calc.items.some((i) => i.drug && i.ranges[i.selected]);
+// 選好藥就能記錄。查不到核准範圍也照樣可以記 ——
+// 紀錄的職責是忠實反映實際發生的事，不是替官方把關。
+const canRecord = () => state.calc.items.some((i) => i.drug);
 
 const views = {
-  search: () => searchViewHtml(state.search),
+  search: () => searchViewHtml({ ...state.search, allApproved: Boolean(state.search.crop.trim() && state.search.query.trim()) }),
   calc: () => calcViewHtml(state.calc, state.fields, areaHa(), canRecord(), favoriteOptions()),
   records: () =>
     recordsViewHtml({
@@ -169,6 +177,7 @@ function renderOverlay() {
       crop: o.crop,
       shown: o.ranges.filter((r) => matchesCrop(r, o.crop)),
       pinned: state.favorites.some((f) => f.key === license(o.drug)),
+      rangeStatus: o.rangeStatus,
     });
   } else if (o.kind === 'fields') {
     overlayEl.innerHTML = fieldsSheetHtml(state.fields);
@@ -218,6 +227,7 @@ function renderOverlayHtmlForDetail() {
     crop: o.crop,
     shown: o.ranges.filter((r) => matchesCrop(r, o.crop)),
     pinned: state.favorites.some((f) => f.key === license(o.drug)),
+    rangeStatus: o.rangeStatus,
   });
 }
 
@@ -252,16 +262,22 @@ async function searchWithFallback(query) {
   }
 }
 
+/**
+ * 取得使用範圍，並帶回「為什麼沒有資料」。
+ *
+ * 不再往外丟例外 —— 呼叫端需要的是狀態，不是錯誤：
+ * 「這支藥沒登記用途」跟「我讀不到」對使用者是完全不同的兩件事。
+ */
 async function rangesWithFallback(drug) {
   const key = license(drug);
   try {
-    const ranges = await loadRanges(drug);
-    cacheRanges(key, ranges);
-    return ranges;
-  } catch (error) {
+    const { ranges, status } = await loadRanges(drug);
+    if (status === 'ok') cacheRanges(key, ranges);
+    return { ranges, status };
+  } catch {
     const cached = await getCached(key);
-    if (cached?.ranges) return cached.ranges;
-    throw error;
+    if (cached?.ranges?.length) return { ranges: cached.ranges, status: 'ok' };
+    return { ranges: [], status: 'failed' };
   }
 }
 
@@ -282,13 +298,9 @@ async function filterDrugsByCrop(drugs, crop, onProgress) {
   const worker = async () => {
     while (next < candidates.length) {
       const i = next++;
-      try {
-        const ranges = await rangesWithFallback(candidates[i]);
-        // 用索引位置回填，結果才會保持原本的相關度排序。
-        if (ranges.some((r) => matchesCrop(r, crop))) hits[i] = candidates[i];
-      } catch {
-        /* 這一支讀不到就略過，不要拖垮整次查詢 */
-      }
+      const { ranges } = await rangesWithFallback(candidates[i]);
+      // 用索引位置回填，結果才會保持原本的相關度排序。
+      if (ranges.some((r) => matchesCrop(r, crop))) hits[i] = candidates[i];
       onProgress((done += 1), candidates.length);
     }
   };
@@ -398,17 +410,73 @@ async function runMainSearch() {
 async function openDetail(drug) {
   state.overlay = { kind: 'detail', drug, ranges: [], loading: true, crop: '' };
   renderOverlay();
-  try {
-    const ranges = await rangesWithFallback(drug);
-    if (state.overlay?.kind === 'detail') state.overlay.ranges = ranges;
-  } catch {
-    /* 讀不到就顯示空清單 */
-  } finally {
-    if (state.overlay?.kind === 'detail') {
-      state.overlay.loading = false;
-      renderOverlay();
-    }
+  const { ranges, status } = await rangesWithFallback(drug);
+  if (state.overlay?.kind === 'detail') {
+    state.overlay.ranges = ranges;
+    state.overlay.rangeStatus = status;
+    state.overlay.loading = false;
+    renderOverlay();
   }
+}
+
+/** 一次掃幾支藥來判斷有沒有核准用於目前作物。每一支都是一次網路請求。 */
+const APPROVAL_SCAN_LIMIT = 12;
+const APPROVAL_SCAN_CONCURRENCY = 4;
+
+const approvalRank = (a) => (a === 'yes' ? 0 : a === undefined ? 1 : a === 'no' ? 2 : 3);
+
+/**
+ * 幫搜尋結果標上「有沒有核准用於這個作物」，並把已核准的排到前面。
+ *
+ * 掃描時只更新那一行進度小字，不整頁重畫 —— 重畫會把輸入框拆掉重建。
+ */
+async function scanApprovals(item, crop) {
+  const candidates = item.results.slice(0, APPROVAL_SCAN_LIMIT);
+  if (!crop || !candidates.length) return;
+
+  item.approvals = new Array(item.results.length).fill(undefined);
+  item.scanning = true;
+  item.scanned = 0;
+  item.scanTotal = candidates.length;
+  render();
+
+  const progress = () => {
+    const el = screenEl.querySelector('.scan-note');
+    if (el) el.textContent = `正在比對「${crop}」的核准範圍…（${item.scanned}／${item.scanTotal}）`;
+  };
+
+  let next = 0;
+  const worker = async () => {
+    while (next < candidates.length) {
+      const i = next++;
+      const { ranges, status } = await rangesWithFallback(candidates[i]);
+      // 讀不到的維持 undefined：不知道不等於未核准，不能亂標。
+      item.approvals[i] =
+        status === 'ok'
+          ? ranges.some((r) => matchesCrop(r, crop))
+            ? 'yes'
+            : 'no'
+          : status === 'failed'
+            ? undefined
+            : 'none';
+      item.scanned += 1;
+      progress();
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(APPROVAL_SCAN_CONCURRENCY, candidates.length) }, worker),
+  );
+
+  // 已核准的排前面，其餘維持原本的相關度順序。
+  const ordered = item.results
+    .map((drug, i) => ({ drug, approval: item.approvals[i], i }))
+    .sort((a, b) => approvalRank(a.approval) - approvalRank(b.approval) || a.i - b.i);
+
+  item.results = ordered.map((o) => o.drug);
+  item.approvals = ordered.map((o) => o.approval);
+  item.scanning = false;
+  render();
 }
 
 async function runItemSearch(item) {
@@ -420,15 +488,18 @@ async function runItemSearch(item) {
 
   item.loading = true;
   item.error = '';
+  item.approvals = null;
   render();
 
   try {
     const { rows, fromCache } = await searchWithFallback(item.query);
     item.results = rows;
     if (fromCache) item.error = '目前連不上官方資料，以下是本機保存的藥劑。';
+    item.loading = false;
+    render();
+    await scanApprovals(item, state.calc.crop.trim());
   } catch (error) {
     item.error = error.message;
-  } finally {
     item.loading = false;
     render();
   }
@@ -437,27 +508,29 @@ async function runItemSearch(item) {
 async function pickItemDrug(item, drug) {
   item.drug = drug;
   item.results = [];
+  item.approvals = null;
   item.loading = true;
   item.error = '';
   render();
 
-  try {
-    const all = await rangesWithFallback(drug);
-    const matched = all.filter((r) => matchesCrop(r, state.calc.crop));
-    item.ranges = matched.length ? matched : all;
-    item.selected = 0;
-    item.error = matched.length ? '' : `找不到「${state.calc.crop || '目前作物'}」的核准範圍，請重新選擇。`;
-  } catch {
-    item.error = '讀不到這項藥劑的使用範圍';
-  } finally {
-    item.loading = false;
-    render();
-  }
+  const { ranges, status } = await rangesWithFallback(drug);
+  const matched = ranges.filter((r) => matchesCrop(r, state.calc.crop));
+
+  // 沒對上作物時仍然列出全部用途，並標記起來讓畫面說明狀況。
+  item.ranges = matched.length ? matched : ranges;
+  item.selected = 0;
+  item.rangeStatus = status;
+  item.cropMissing = status === 'ok' && !matched.length;
+  item.loading = false;
+  render();
 }
 
 /* ------------------------------------------------------------------ */
 /* 常用藥劑                                                            */
 /* ------------------------------------------------------------------ */
+
+/** 「最近用過」最多列幾支。釘選的沒有上限，因為那是使用者自己挑的。 */
+const RECENT_DRUG_LIMIT = 10;
 
 /**
  * 下拉選單的內容：手動釘選的排上面，施作紀錄自動累積的「最近用過」排下面。
@@ -477,7 +550,7 @@ function favoriteOptions() {
     }
   }
 
-  return { pinned, recent: [...seen.values()].slice(0, 8) };
+  return { pinned, recent: [...seen.values()].slice(0, RECENT_DRUG_LIMIT) };
 }
 
 async function pickFavorite(item, key) {
@@ -607,24 +680,30 @@ function recomputeHarvest(draft) {
 }
 
 function openRecordForm() {
-  const items = state.calc.items.filter((i) => i.drug && i.ranges[i.selected]);
+  // 只要選了藥就能記錄，即使查不到核准範圍 —— 那些欄位留空由使用者自己填。
+  const items = state.calc.items.filter((i) => i.drug);
   if (!items.length) return;
 
   const field = state.fields.find((f) => f.id === state.calc.fieldId);
 
   const drugs = items.map((item) => {
     const range = item.ranges[item.selected];
-    const { amount, unit, suggestion } = suggestAmount(range);
+    const { amount, unit, suggestion } = range
+      ? suggestAmount(range)
+      : { amount: '', unit: '公克', suggestion: '' };
+
     return {
       name: drugTitle(item.drug),
       license: license(item.drug),
       ingredient: text(item.drug['化學成分']),
-      target: text(range['病蟲害名稱']),
-      cropOfficial: text(range['作物名稱']),
-      dilution: text(range['稀釋倍數']),
-      dosePerHa: text(range['每公頃使用用藥量']),
-      phi: text(range['安全採收期']),
-      interval: text(range['施藥間隔']),
+      maker: text(item.drug['廠商名稱']),
+      target: range ? text(range['病蟲害名稱']) : '',
+      cropOfficial: range ? text(range['作物名稱']) : '',
+      dilution: range ? text(range['稀釋倍數']) : '',
+      dosePerHa: range ? text(range['每公頃使用用藥量']) : '',
+      phi: range ? text(range['安全採收期']) : '',
+      interval: range ? text(range['施藥間隔']) : '',
+      offLabel: item.cropMissing || !range,
       amount,
       amountUnit: unit,
       water: '',
@@ -645,6 +724,7 @@ function openRecordForm() {
     mode: drugs.length > 1 ? 'tank' : 'tank',
     water: state.calc.water,
     drugs,
+    additives: [],
     note: '',
     error: '',
   };
@@ -658,6 +738,7 @@ function openRecordFormForEdit(app) {
   const draft = {
     ...app,
     drugs: app.drugs.map((d) => ({ ...d })),
+    additives: (app.additives || []).map((a) => ({ ...a })),
     error: '',
   };
   recomputeHarvest(draft);
@@ -722,6 +803,14 @@ async function saveRecord() {
       amountUnit: d.amountUnit,
       water: draft.mode === 'separate' ? Number(d.water) : null,
     })),
+    additives: draft.additives
+      .filter((a) => a.name.trim())
+      .map((a) => ({
+        name: a.name.trim(),
+        amount: String(a.amount || '').trim(),
+        unit: String(a.unit || '').trim(),
+        note: String(a.note || '').trim(),
+      })),
     note: draft.note.trim(),
     harvestDate: draft.harvestDate,
     harvestDays: draft.harvestDays,
@@ -773,8 +862,9 @@ async function copyText(value) {
 /**
  * 讓瀏覽器把內容存成檔案。
  *
- * 檔名一律用英數字：Chromium 遇到含中文的 download 屬性會整個放棄，
- * 存成沒有副檔名的 "download"，那樣的 .ics 使用者根本打不開。
+ * 注意：部分 Chromium 版本遇到含中文的 download 屬性會整個放棄，
+ * 存成沒有副檔名的 "download"。備份檔用中文（使用者要在檔案 App 裡找得到），
+ * 行事曆檔用英數字（副檔名掉了就完全打不開）。
  */
 function downloadFile(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
@@ -795,7 +885,7 @@ function downloadFile(filename, content, mime) {
 async function doExportBackup() {
   try {
     const data = await exportBackup();
-    downloadFile(`field-meds-backup-${todayKey()}.json`, JSON.stringify(data, null, 2), 'application/json');
+    downloadFile(`田間用藥${todayKey()}.json`, JSON.stringify(data, null, 2), 'application/json');
     toast('備份已下載');
   } catch (error) {
     notice('匯出失敗', error.message);
@@ -906,6 +996,14 @@ const ACTIONS = {
     const draft = state.overlay.draft;
     draft.drugs.splice(Number(d.idx), 1);
     recomputeHarvest(draft);
+    renderOverlay();
+  },
+  'additive-add': () => {
+    state.overlay.draft.additives.push({ name: '', amount: '', unit: '', note: '' });
+    renderOverlay();
+  },
+  'additive-remove': (d) => {
+    state.overlay.draft.additives.splice(Number(d.idx), 1);
     renderOverlay();
   },
   'save-record': () => saveRecord(),
@@ -1051,6 +1149,18 @@ document.addEventListener('input', (event) => {
       break;
     case 'record-drug-water':
       draft.drugs[Number(idx)].water = value;
+      break;
+    case 'additive-name':
+      draft.additives[Number(idx)].name = value;
+      break;
+    case 'additive-amount':
+      draft.additives[Number(idx)].amount = value;
+      break;
+    case 'additive-unit':
+      draft.additives[Number(idx)].unit = value;
+      break;
+    case 'additive-note':
+      draft.additives[Number(idx)].note = value;
       break;
     default:
       break;

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { calcRange, intersect, intersectAll, toBaseDose, waterRangeFor, doseRangeForWater, parseDilution, parseDose, toHectares } from './calc.js';
+import { actualDilution, calcRange, intersect, intersectAll, toBaseAmount, toBaseDose, waterRangeFor, doseRangeForWater, parseDilution, parseDose, toHectares } from './calc.js';
 
 describe('parseDose：官方「每公頃使用用藥量」欄位', () => {
   it('讀得出區間與單位', () => {
@@ -208,5 +208,55 @@ describe('calcRange：面積用藥量與稀釋倍數的交叉檢核', () => {
   it('兩個欄位都沒有資料時什麼都不算', () => {
     const r = calcRange('-', '-', oneHa, 500);
     assert.equal(r.kind, 'none');
+  });
+});
+
+describe('toBaseAmount：使用者填的實際用量換算成公克／毫升', () => {
+  it('公斤換公克', () => {
+    assert.deepEqual(toBaseAmount('1.5', '公斤'), { value: 1500, base: '公克' });
+  });
+
+  it('公升換毫升', () => {
+    assert.deepEqual(toBaseAmount('0.5', '公升'), { value: 500, base: '毫升' });
+  });
+
+  it('已經是基本單位就不動', () => {
+    assert.deepEqual(toBaseAmount('260', '毫升'), { value: 260, base: '毫升' });
+  });
+
+  it('零、負數、空字串與怪單位都回 null', () => {
+    assert.equal(toBaseAmount('0', '公克'), null);
+    assert.equal(toBaseAmount('-5', '公克'), null);
+    assert.equal(toBaseAmount('', '公克'), null);
+    assert.equal(toBaseAmount('abc', '公克'), null);
+    assert.equal(toBaseAmount('5', '瓢'), null);
+  });
+});
+
+describe('actualDilution：由實際藥量與水量反推真正的稀釋倍數', () => {
+  it('500 公升水配 500 公克藥 = 1000 倍', () => {
+    assert.equal(actualDilution('500', '公克', 500), 1000);
+  });
+
+  it('單位是公斤時會先換算', () => {
+    assert.equal(actualDilution('0.5', '公斤', 500), 1000);
+  });
+
+  it('水量加倍，倍數也加倍', () => {
+    assert.equal(actualDilution('500', '公克', 1000), 2000);
+  });
+
+  it('600 公升配 300 毫升 = 2000 倍', () => {
+    assert.equal(actualDilution('300', '毫升', 600), 2000);
+  });
+
+  it('四捨五入到整數，田間不需要小數點', () => {
+    assert.equal(actualDilution('300', '公克', 500), 1667);
+  });
+
+  it('缺水量或缺藥量時不亂算', () => {
+    assert.equal(actualDilution('500', '公克', 0), null);
+    assert.equal(actualDilution('', '公克', 500), null);
+    assert.equal(actualDilution('500', '公克', null), null);
   });
 });

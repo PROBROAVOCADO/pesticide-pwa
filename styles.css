@@ -117,3 +117,34 @@
 
 /* 已釘選的常用藥劑 */
 .ghost-btn.pinned{color:var(--herb);border-color:rgba(74,103,51,.4);background:#e8eedf}
+
+/* 已核准標記 */
+.approve-tag{font-size:10px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.approve-tag.ok{color:var(--paper);background:var(--herb)}
+.approve-tag.no{color:var(--muted);background:var(--sunken);border:1px solid var(--rule)}
+.drug-card.compact small{display:block;color:var(--muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.selected-drug small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scan-note{margin:9px 2px;font-size:12px;color:var(--brown);font-weight:600}
+
+/* 提示卡裡比較長的標題 */
+.verdict .small-strong{font-size:19px;line-height:1.45}
+
+/* 其他添加物 */
+.record-drug.additive{background:var(--sunken);border-style:dashed}
+.range-card.additive{background:var(--sunken);border-style:dashed}
+
+/* 版本更新摘要 */
+.release-log{max-height:52dvh;overflow:auto;margin-top:4px}
+.release-log b{display:block;margin:14px 0 2px;color:var(--herb);font-size:13px;letter-spacing:.5px}
+.release-log b:first-child{margin-top:0}
+.release-log ul{padding-left:20px;margin:0}
+.release-log li{margin-bottom:3px}
+
+/* 設定頁的說明卡與下一列之間要留白，不然會黏在一起 */
+.about-card{margin-bottom:22px}
+.about-card code{background:var(--sunken);border-radius:6px;padding:1px 6px;font-size:12px}
+
+/* 日期與時間欄位在 iOS 上原生內容較寬，不要塞進兩欄網格，會互相重疊 */
+.field input,.field select{min-width:0}
+.field input[type=date],.field input[type=time]{width:100%;-webkit-appearance:none;appearance:none}
+.approve-tag.none{color:var(--brick);background:#fbf4ef;border:1px solid rgba(156,69,53,.3)}

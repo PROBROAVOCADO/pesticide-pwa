@@ -5,14 +5,16 @@
  * 所有動態內容一律經過 esc()，因為官方資料會直接進 innerHTML。
  */
 
-import { AREA_UNITS, calcRange, formatRange, formatWater } from './calc.js';
-import { drugSubtitle, drugTitle, license, text } from './moa.js';
+import { AREA_UNITS, actualDilution, calcRange, formatRange, formatWater } from './calc.js';
+import { drugIdentity, drugSubtitle, drugTitle, license, text } from './moa.js';
 import {
+  addDays,
   areaLabel,
   formatDisplayDate,
   formatSlashDate,
   modeLabel,
   monthGrid,
+  parseDays,
   todayKey,
 } from './records.js';
 
@@ -26,17 +28,35 @@ const AREA_UNIT_LABEL = Object.fromEntries(AREA_UNITS.map((u) => [u.value, u.lab
 /* 藥劑卡                                                              */
 /* ------------------------------------------------------------------ */
 
-export function drugCardHtml(drug, action, dataAttr, compact) {
+/**
+ * 藥劑卡。
+ *
+ * 廠商名稱與許可證號一律顯示，連精簡版也是 —— 官方資料裡很多產品沒有廠牌名稱，
+ * 標題只好退回普通名稱，於是一整排都叫「賽洛寧」，不附廠商就分不出是哪一支。
+ *
+ * approval：'yes' 已核准／'no' 有登記但沒這個作物／'none' 這支藥根本沒有使用範圍／
+ * undefined 讀不到，不知道。最後一種刻意留白 —— 不知道不能標成未核准。
+ */
+export function drugCardHtml(drug, action, dataAttr, compact, approval) {
   const kind = text(drug['農藥分類中文意義']);
+  const badge =
+    approval === 'yes'
+      ? '<span class="approve-tag ok">✅ 已核准</span>'
+      : approval === 'no'
+        ? '<span class="approve-tag no">未列此作物</span>'
+        : approval === 'none'
+          ? '<span class="approve-tag none">無使用範圍</span>'
+          : '';
+
   return `
     <button class="drug-card${compact ? ' compact' : ''}" type="button" data-action="${action}" ${dataAttr}>
       <span class="drug-topline">
         <span class="kind${kind === '殺菌劑' ? ' fungicide' : ''}">${esc(kind)}</span>
-        <span class="license">${esc(license(drug))}</span>
+        ${badge}
       </span>
       <strong>${esc(drugTitle(drug))}</strong>
       <span>${esc(drugSubtitle(drug))}</span>
-      ${compact ? '' : `<small>${esc(text(drug['廠商名稱']))}</small>`}
+      <small>${esc(drugIdentity(drug))}</small>
     </button>`;
 }
 
@@ -44,16 +64,16 @@ export function drugCardHtml(drug, action, dataAttr, compact) {
 /* 藥劑查詢分頁                                                        */
 /* ------------------------------------------------------------------ */
 
-export function searchViewHtml({ query, crop, drugs, loading, message, note }) {
+export function searchViewHtml({ query, crop, drugs, loading, message, note, allApproved }) {
   const results = drugs.length
     ? `${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
-       <div class="drug-grid">${drugs.map((d, i) => drugCardHtml(d, 'open-detail', `data-idx="${i}"`, false)).join('')}</div>`
+       <div class="drug-grid">${drugs.map((d, i) => drugCardHtml(d, 'open-detail', `data-idx="${i}"`, false, allApproved ? 'yes' : undefined)).join('')}</div>`
     : loading
       ? ''
       : `${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
          <div class="welcome-card">
-           <b>可以查什麼？</b>
-           <p>上面填藥劑的普通名稱、商品廠牌或農藥代號；下面填作物。兩欄都填，就只會列出真的核准用在這個作物上的藥。</p>
+           <b>🔍 可以查什麼？</b>
+           <p>上面填藥劑的普通名稱、商品廠牌或農藥代號，下面填作物。兩欄都填的話，只會列出真的核准用在這個作物上的藥，省得一支一支點開看。</p>
            <p>點開藥劑後，可看有效成分、抗藥性代碼、核准作物、稀釋倍數與安全採收期。</p>
          </div>`;
 
@@ -173,6 +193,59 @@ export function verdictHtml(range, areaHa, water) {
     </div>`;
 }
 
+/**
+ * 選好藥之後、關於「核准使用範圍」的狀況提示。
+ *
+ * 這裡刻意不擋人：查不到核准範圍時仍然列出所有用途、仍然可以完成施作紀錄，
+ * 只是把狀況說清楚。紀錄的職責是忠實反映實際發生的事，不是審核。
+ */
+export function rangeNoticeHtml(item, crop) {
+  const card = (label, title, body, tone) => `
+    <div class="verdict ${tone}">
+      <span class="verdict-label">${label}</span>
+      <strong class="small-strong">${esc(title)}</strong>
+      <p>${esc(body)}</p>
+    </div>`;
+
+  if (item.rangeStatus === 'no-link') {
+    return card(
+      '⚠️ 沒有核准使用範圍',
+      '這筆登記資料沒有附使用範圍',
+      '可能是原體、技術級產品，或官方尚未提供。你仍然可以記下實際施作，但用量與稀釋請完全依照手上產品的中文標示。',
+      'warn',
+    );
+  }
+
+  if (item.rangeStatus === 'empty') {
+    return card(
+      '⚠️ 官方回傳空清單',
+      '查得到這支藥，但沒有使用範圍',
+      '官方的使用範圍資料是空的。你仍然可以記下實際施作，但請依照產品標示調配。',
+      'warn',
+    );
+  }
+
+  if (item.rangeStatus === 'failed') {
+    return card(
+      '📡 讀不到使用範圍',
+      '暫時取不到官方資料',
+      '可能是網路不通，或這支藥還沒在這台裝置查過。可以稍後再試，仍然可以先記下實際施作。',
+      'info',
+    );
+  }
+
+  if (item.cropMissing) {
+    return card(
+      '⚠️ 不在核准作物內',
+      `找不到「${crop || '目前作物'}」的核准範圍`,
+      '下面列的是這支藥所有的核准用途。如果你仍要用在這個作物上，請特別注意 —— 這不在官方核准範圍內，安全採收期也無從依循。',
+      'warn',
+    );
+  }
+
+  return '';
+}
+
 export function itemOutputHtml(item, areaHa, water) {
   const range = item.ranges[item.selected];
   if (!range) return '';
@@ -223,7 +296,7 @@ function favoritesSelectHtml(item, favorites) {
     </label>`;
 }
 
-function calcDrugHtml(item, canRemove, areaHa, water, favorites) {
+function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
   const head = `
     <div class="calc-drug-head">
       <span class="step-stamp">第 ${item.id} 種</span>
@@ -233,11 +306,16 @@ function calcDrugHtml(item, canRemove, areaHa, water, favorites) {
   const error = item.error ? `<p class="field-error">${esc(item.error)}</p>` : '';
 
   if (!item.drug) {
-    const results = item.results.length
-      ? `<div class="result-list">${item.results
-          .map((d, i) => drugCardHtml(d, 'item-pick', `data-id="${item.id}" data-idx="${i}"`, true))
-          .join('')}</div>`
+    const scanning = item.scanning
+      ? `<p class="scan-note">正在比對「${esc(crop)}」的核准範圍…（${item.scanned}／${item.scanTotal}）</p>`
       : '';
+
+    const results = item.results.length
+      ? `${scanning}
+         <div class="result-list">${item.results
+           .map((d, i) => drugCardHtml(d, 'item-pick', `data-id="${item.id}" data-idx="${i}"`, true, item.approvals?.[i]))
+           .join('')}</div>`
+      : scanning;
 
     return `
       <article class="calc-drug">
@@ -255,19 +333,21 @@ function calcDrugHtml(item, canRemove, areaHa, water, favorites) {
       </article>`;
   }
 
+  const rangeSelect = item.ranges.length
+    ? `<label class="field">
+         <span>選擇防治用途</span>
+         <select data-field="item-range" data-id="${item.id}">
+           ${item.ranges
+             .map((r, i) => `<option value="${i}"${i === item.selected ? ' selected' : ''}>${esc(text(r['作物名稱']))}・${esc(text(r['病蟲害名稱']))}</option>`)
+             .join('')}
+         </select>
+       </label>
+       <div data-output="${item.id}">${itemOutputHtml(item, areaHa, water)}</div>`
+    : '';
+
   const body = item.loading
     ? '<div class="empty">正在取得核准用法…</div>'
-    : item.ranges.length
-      ? `<label class="field">
-           <span>選擇防治用途</span>
-           <select data-field="item-range" data-id="${item.id}">
-             ${item.ranges
-               .map((r, i) => `<option value="${i}"${i === item.selected ? ' selected' : ''}>${esc(text(r['作物名稱']))}・${esc(text(r['病蟲害名稱']))}</option>`)
-               .join('')}
-           </select>
-         </label>
-         <div data-output="${item.id}">${itemOutputHtml(item, areaHa, water)}</div>`
-      : '';
+    : `${rangeNoticeHtml(item, crop)}${rangeSelect}`;
 
   return `
     <article class="calc-drug">
@@ -276,6 +356,7 @@ function calcDrugHtml(item, canRemove, areaHa, water, favorites) {
         <div>
           <strong>${esc(drugTitle(item.drug))}</strong>
           <span>${esc(drugSubtitle(item.drug))}</span>
+          <small>${esc(drugIdentity(item.drug))}</small>
         </div>
         <button type="button" data-action="item-reset" data-id="${item.id}">更換</button>
       </div>
@@ -317,7 +398,7 @@ export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
       <div class="page-title">
         <span class="eyebrow">本次施用</span>
         <h2>用藥量試算</h2>
-        <p>先選土地或直接填面積，再逐項加入本次藥劑。</p>
+        <p>先選土地或直接填面積，再一項一項加入這次要用的藥。</p>
       </div>
 
       ${fieldChipsHtml(fields, fieldId)}
@@ -350,11 +431,11 @@ export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
       </div>
 
       <div class="section-row">
-        <h3>本次藥劑</h3>
+        <h3>💊 本次藥劑</h3>
         <span>${items.length} 種</span>
       </div>
 
-      ${items.map((item) => calcDrugHtml(item, items.length > 1, areaHa, Number(water) || 0, favorites)).join('')}
+      ${items.map((item) => calcDrugHtml(item, items.length > 1, areaHa, Number(water) || 0, favorites, crop)).join('')}
 
       <button class="add-drug" type="button" data-action="add-item"><span>＋</span>增加一種藥劑</button>
 
@@ -366,7 +447,7 @@ export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
         : '選好藥劑與防治用途之後，就可以把這次施作記下來。'}</p>
 
       <div class="safety-card">
-        <b>安全提醒</b>
+        <b>⚠️ 安全提醒</b>
         <p>試算會同時檢核每公頃用量與稀釋倍數，但那只是數量換算，不判斷混配相容性、藥害、抗藥性輪替或現場氣候。多種藥劑不得直接相加為同一安全範圍。</p>
       </div>
     </section>`;
@@ -396,7 +477,7 @@ function pendingHtml(pending) {
 
   return `
     <div class="pending-card">
-      <b>尚未到參考採收日</b>
+      <b>⏳ 還沒到參考採收日</b>
       ${rows}
       <p>依本機施作紀錄推算。漏記的施藥不會被算進來，實際採收仍請自行確認。</p>
     </div>`;
@@ -453,8 +534,8 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
     : filtered.length
       ? filtered.slice(0, 12).map(recordRowHtml).join('')
       : `<div class="welcome-card">
-           <b>還沒有任何紀錄</b>
-           <p>到「用量試算」選好土地與藥劑，實際噴完之後按「完成施作並記錄」，這裡就會出現。</p>
+           <b>🌱 還沒有任何紀錄</b>
+           <p>到「用量試算」選好土地跟藥，實際噴完之後按「完成施作並記錄」，這裡就會長出來。</p>
          </div>`;
 
   return `
@@ -462,7 +543,7 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
       <div class="page-title">
         <span class="eyebrow">下田做了什麼</span>
         <h2>施作紀錄</h2>
-        <p>只保存在這支手機，不上傳任何地方。記得定期到設定頁匯出備份。</p>
+        <p>只存在這支手機，不會上傳到任何地方。記得偶爾到設定頁匯出備份 💾</p>
       </div>
 
       ${pendingHtml(pending)}
@@ -511,28 +592,36 @@ export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, pers
         <p>把重要事項收在這裡，需要時再翻開。</p>
       </div>
 
-      ${dbError ? `<div class="safety-card"><b>本機儲存無法使用</b><p>${esc(dbError)}查詢與試算仍可正常使用，但土地與施作紀錄無法保存。無痕模式是常見原因。</p></div>` : ''}
+      ${dbError ? `<div class="safety-card"><b>😵 本機儲存無法使用</b><p>${esc(dbError)}查詢與試算仍可正常使用，但土地與施作紀錄無法保存。無痕模式是常見原因。</p></div>` : ''}
 
       <button class="setting-row primary" data-action="install">
-        <span><b>安裝到手機</b><small>加入主畫面，像 App 一樣開啟</small></span><i>›</i>
+        <span><b>📲 安裝到手機</b><small>加入主畫面，像 App 一樣開啟</small></span><i>›</i>
       </button>
 
-      <div class="section-row"><h3>我的資料</h3><span>只在這支手機</span></div>
+      <div class="section-row"><h3>📦 我的資料</h3><span>只在這支手機</span></div>
 
       <button class="setting-row" data-action="open-fields">
-        <span><b>土地管理</b><small>目前 ${fieldCount} 筆</small></span><i>›</i>
+        <span><b>🗂 土地管理</b><small>目前 ${fieldCount} 筆</small></span><i>›</i>
       </button>
 
       <button class="setting-row" data-action="export-backup">
-        <span><b>匯出備份</b><small>${appCount} 筆施作紀錄，存成一個檔案</small></span><i>›</i>
+        <span><b>💾 匯出備份</b><small>${appCount} 筆施作紀錄，存成一個檔案</small></span><i>›</i>
       </button>
 
       <button class="setting-row" data-action="import-backup">
-        <span><b>匯入備份</b><small>換手機時把資料帶回來</small></span><i>›</i>
+        <span><b>📥 匯入備份</b><small>換手機時把資料帶回來</small></span><i>›</i>
       </button>
 
       <article class="about-card">
-        <h3>資料會在什麼時候消失</h3>
+        <h3>💾 匯出的檔案跑去哪了</h3>
+        <p>按下「匯出備份」之後，瀏覽器會下載一個 <code>.json</code> 檔，檔名是「田間用藥」加上今天的日期。</p>
+        <p><b>iPhone：</b>Safari 會先把檔案收進下載項目，你要再點一次「更多」或分享圖示，選「儲存到檔案」，挑一個自己找得到的位置。沒有做這一步的話，清掉 Safari 的下載記錄就會不見。</p>
+        <p><b>Android：</b>通常直接存進「下載」資料夾，用檔案管理員就找得到。</p>
+        <p>換手機時，把這個檔案傳到新手機（LINE 傳給自己、AirDrop、雲端硬碟都可以），在新手機上按「匯入備份」選它就好。相同的紀錄會被覆寫，本機原有而備份沒有的資料會保留。</p>
+      </article>
+
+      <article class="about-card">
+        <h3>🔒 資料會在什麼時候消失</h3>
         <p>土地與施作紀錄存在這個瀏覽器的網站資料區，不會上傳到任何後台，我們也看不到。但以下情況資料會不見：</p>
         <ul>
           <li>清除這個網站的「網站資料」或瀏覽紀錄</li>
@@ -545,7 +634,7 @@ export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, pers
       </article>
 
       <button class="setting-row" data-action="modal" data-modal="release">
-        <span><b>版本更新摘要</b><small>${esc(version)}</small></span><i>›</i>
+        <span><b>🆕 版本更新摘要</b><small>${esc(version)}</small></span><i>›</i>
       </button>
 
       <button class="setting-row" data-action="modal" data-modal="support">
@@ -553,7 +642,7 @@ export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, pers
       </button>
 
       <article class="about-card">
-        <h3>資料與責任說明</h3>
+        <h3>📖 資料與責任說明</h3>
         <p>藥劑資料取自農業部「農藥資料查詢」及動植物防疫檢疫署登記資訊，每週更新。官方也明確提醒，公開使用範圍僅供參考，實際施藥應依產品標示及最新公告。</p>
         <p>本工具不替代農藥標示、專業診斷或農業主管機關指導。若作物、病蟲害或單位無法確定，請先向農業改良場、農會或合格農藥販賣業者確認。</p>
         <a href="${aphiaUrl}" target="_blank" rel="noreferrer">前往官方農藥資訊服務網</a>
@@ -565,8 +654,18 @@ export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, pers
 /* 藥劑詳細資料面板                                                    */
 /* ------------------------------------------------------------------ */
 
-export function detailHtml({ drug, ranges, loading, crop, shown, pinned }) {
+export function detailHtml({ drug, ranges, loading, crop, shown, pinned, rangeStatus }) {
   const resistance = text(drug['FRAC殺菌劑抗藥性']) || text(drug['IRAC殺蟲劑抗藥性']);
+
+  // 分清楚三種「沒有資料」：官方沒附連結、連結給了空清單、我們讀不到。
+  const emptyReason =
+    rangeStatus === 'no-link'
+      ? '這筆登記資料沒有附核准使用範圍。可能是原體、技術級產品，或官方尚未提供，請以手上產品的中文標示為準。'
+      : rangeStatus === 'empty'
+        ? '官方有給連結，但回傳的使用範圍是空的。請以手上產品的中文標示為準。'
+        : rangeStatus === 'failed'
+          ? '目前讀不到官方的使用範圍，可能是網路不通。稍後再試試看。'
+          : `沒有符合「${crop}」的核准範圍。清空上面的欄位可以看全部用途。`;
 
   const rangeCards = loading
     ? '<div class="empty">正在翻閱官方資料…</div>'
@@ -588,7 +687,10 @@ export function detailHtml({ drug, ranges, loading, crop, shown, pinned }) {
               </article>`;
           })
           .join('')
-      : '<div class="empty">沒有符合這個作物名稱的核准範圍。</div>';
+      : `<div class="verdict ${rangeStatus === 'failed' ? 'info' : 'warn'}">
+           <span class="verdict-label">${rangeStatus && rangeStatus !== 'ok' ? '⚠️ 沒有核准使用範圍' : '🔍 查無符合'}</span>
+           <p>${esc(emptyReason)}</p>
+         </div>`;
 
   return sheetHtml({
     eyebrow: '藥劑說明',
@@ -661,8 +763,8 @@ export function fieldsSheetHtml(fields) {
         )
         .join('')
     : `<div class="welcome-card">
-         <b>還沒有登記土地</b>
-         <p>把常用的地登記起來，之後試算只要點一下就會帶入面積與作物，不必每次重打。</p>
+         <b>🗂 還沒有登記土地</b>
+         <p>把常跑的地先登記起來，之後試算點一下就帶入面積跟作物，不用每次重打。</p>
        </div>`;
 
   return sheetHtml({
@@ -725,7 +827,7 @@ export function recordFormHtml(draft) {
           <strong>${esc(d.name)}</strong>
           ${draft.drugs.length > 1 ? `<button type="button" class="remove" data-action="record-drug-remove" data-idx="${i}">－ 移除</button>` : ''}
         </div>
-        <span class="record-drug-sub">${esc(d.target || '—')}${d.dilution ? `・稀釋 ${esc(d.dilution)}` : ''}</span>
+        <span class="record-drug-sub">${esc(d.target || '—')}${d.dilution ? `・建議稀釋 ${esc(d.dilution)}` : ''}</span>
 
         <div class="two-fields">
           <label class="field">
@@ -749,9 +851,39 @@ export function recordFormHtml(draft) {
 
         ${d.suggestion ? `<p class="suggestion">試算建議：${esc(d.suggestion)}</p>` : ''}
         <dl class="check-rows">
-          <div><dt>當時安全採收期</dt><dd>${esc(d.phi || '未提供')}</dd></div>
-          <div><dt>當時施藥間隔</dt><dd>${esc(d.interval || '未提供')}</dd></div>
+          <div><dt>安全採收期</dt><dd>${esc(d.phi || '未提供')}</dd></div>
+          <div><dt>施藥間隔</dt><dd>${esc(d.interval || '未提供')}</dd></div>
         </dl>
+      </article>`,
+    )
+    .join('');
+
+  const additiveRows = draft.additives
+    .map(
+      (a, i) => `
+      <article class="record-drug additive">
+        <div class="record-drug-head">
+          <strong>第 ${i + 1} 項</strong>
+          <button type="button" class="remove" data-action="additive-remove" data-idx="${i}">－ 移除</button>
+        </div>
+        <label class="field">
+          <span>名稱</span>
+          <input data-field="additive-name" data-idx="${i}" value="${esc(a.name)}" placeholder="例如：自製光合菌、矽藻素" />
+        </label>
+        <div class="two-fields">
+          <label class="field">
+            <span>用量</span>
+            <input inputmode="decimal" data-field="additive-amount" data-idx="${i}" value="${esc(a.amount)}" />
+          </label>
+          <label class="field">
+            <span>單位</span>
+            <input data-field="additive-unit" data-idx="${i}" value="${esc(a.unit)}" placeholder="公升／公斤／瓢" />
+          </label>
+        </div>
+        <label class="field">
+          <span>備註（可留空）</span>
+          <input data-field="additive-note" data-idx="${i}" value="${esc(a.note)}" placeholder="例如：稀釋 500 倍先溶解" />
+        </label>
       </article>`,
     )
     .join('');
@@ -776,16 +908,15 @@ export function recordFormHtml(draft) {
     body: `
       <p class="legal-note">保存的是你確認過的實際用量，不是試算值。試算結果只放在旁邊當參考。</p>
 
-      <div class="two-fields">
-        <label class="field">
-          <span>施作日期</span>
-          <input type="date" data-field="record-date" value="${esc(draft.date)}" />
-        </label>
-        <label class="field">
-          <span>時間（可留空）</span>
-          <input type="time" data-field="record-time" value="${esc(draft.time)}" />
-        </label>
-      </div>
+      <label class="field">
+        <span>施作日期</span>
+        <input type="date" data-field="record-date" value="${esc(draft.date)}" />
+      </label>
+
+      <label class="field">
+        <span>施作時間（可留空）</span>
+        <input type="time" data-field="record-time" value="${esc(draft.time)}" />
+      </label>
 
       <label class="field">
         <span>土地名稱</span>
@@ -827,8 +958,14 @@ export function recordFormHtml(draft) {
            </label>`
         : ''}
 
-      <div class="section-row"><h3>本次用藥</h3><span>${draft.drugs.length} 種</span></div>
+      <div class="section-row"><h3>💊 本次用藥</h3><span>${draft.drugs.length} 種</span></div>
       ${drugRows}
+
+      <div class="section-row"><h3>🧪 其他添加物</h3><span>${draft.additives.length} 項</span></div>
+      <p class="legal-note">微生物肥料、光合菌、展著劑這類不在農藥登記資料裡的東西，記在這裡。
+      它們沒有官方的安全採收期，所以不會列入採收日推算。</p>
+      ${additiveRows}
+      <button class="add-drug" type="button" data-action="additive-add"><span>＋</span>加一項添加物</button>
 
       <label class="field">
         <span>備註</span>
@@ -850,20 +987,42 @@ export function recordFormHtml(draft) {
 
 export function recordDetailHtml(app, confirmDelete) {
   const drugs = app.drugs
-    .map(
-      (d, i) => `
+    .map((d, i) => {
+      // 實際稀釋倍數由那天真正倒進去的藥量與水量反推，不是抄官方的建議值。
+      const water = app.mode === 'separate' ? d.water : app.water;
+      const actual = actualDilution(d.amount, d.amountUnit, water);
+      const phiDays = parseDays(d.phi);
+      const harvest = phiDays === null ? null : addDays(app.date, phiDays);
+
+      return `
       <article class="range-card">
         <div><strong>${i + 1}. ${esc(d.name)}</strong><span>${esc(d.amount)} ${esc(d.amountUnit)}</span></div>
         <dl>
           <div><dt>防治對象</dt><dd>${esc(d.target || '—')}</dd></div>
-          <div><dt>稀釋倍數</dt><dd>${esc(d.dilution || '—')}</dd></div>
-          <div><dt>當時安全採收期</dt><dd>${esc(d.phi || '—')}</dd></div>
-          <div><dt>當時施藥間隔</dt><dd>${esc(d.interval || '—')}</dd></div>
-          ${app.mode === 'separate' && d.water ? `<div class="wide"><dt>這一次的用水量</dt><dd>${esc(d.water)} 公升</dd></div>` : ''}
+          <div><dt>實際稀釋倍數</dt><dd>${actual ? `約 ${actual.toLocaleString('en-US')} 倍` : '無法計算'}</dd></div>
+          <div><dt>建議稀釋倍數</dt><dd>${esc(d.dilution || '—')}</dd></div>
+          <div><dt>用水量</dt><dd>${water ? `${esc(water)} 公升` : '—'}</dd></div>
+          <div><dt>安全採收期</dt><dd>${esc(d.phi || '—')}</dd></div>
+          <div><dt>施藥間隔</dt><dd>${esc(d.interval || '—')}</dd></div>
+          <div class="wide"><dt>這支藥的可採收日</dt><dd>${harvest ? esc(formatSlashDate(harvest)) : '無法推算，請查產品標示'}</dd></div>
         </dl>
-      </article>`,
-    )
+      </article>`;
+    })
     .join('');
+
+  const additives = app.additives?.length
+    ? `<div class="section-row"><h3>🧪 其他添加物</h3><span>${app.additives.length} 項</span></div>
+       ${app.additives
+         .map(
+           (a, i) => `
+         <article class="range-card additive">
+           <div><strong>${i + 1}. ${esc(a.name)}</strong><span>${esc([a.amount, a.unit].filter(Boolean).join(' ') || '—')}</span></div>
+           ${a.note ? `<p>${esc(a.note)}</p>` : ''}
+         </article>`,
+         )
+         .join('')}
+       <p class="legal-note">非農藥登記品項，沒有官方安全採收期，未列入採收日推算。</p>`
+    : '';
 
   return sheetHtml({
     eyebrow: `${formatSlashDate(app.date)}${app.time ? ` ${app.time}` : ''}`,
@@ -879,21 +1038,23 @@ export function recordDetailHtml(app, confirmDelete) {
         <div class="wide"><span>參考最早採收日</span><b>${app.harvestDate ? esc(formatSlashDate(app.harvestDate)) : '無法推算'}</b></div>
       </div>
 
-      <div class="section-row"><h3>本次用藥</h3><span>${app.drugs.length} 種</span></div>
+      <div class="section-row"><h3>💊 本次用藥</h3><span>${app.drugs.length} 種</span></div>
       ${drugs}
 
-      <div class="section-row"><h3>備份到手機行事曆</h3><span>不會自動同步</span></div>
+      ${additives}
+
+      <div class="section-row"><h3>📅 備份到手機行事曆</h3><span>不會自動同步</span></div>
       <p class="legal-note">這兩份資料各自獨立。之後在這裡修改或刪除紀錄，不會連動改到手機行事曆，需要重新輸出一次。</p>
 
       <button class="record-cta" type="button" data-action="copy-record" data-id="${esc(app.id)}">複製完整紀錄</button>
       <button class="ghost-btn" type="button" data-action="download-ics" data-id="${esc(app.id)}">下載行事曆檔（iPhone 適用）</button>
       <button class="ghost-btn" type="button" data-action="open-google-calendar" data-id="${esc(app.id)}">用 Google 日曆新增</button>
 
-      <div class="section-row"><h3>這筆紀錄</h3><span></span></div>
+      <div class="section-row"><h3>✏️ 這筆紀錄</h3><span></span></div>
       <button class="ghost-btn" type="button" data-action="edit-record" data-id="${esc(app.id)}">編輯</button>
       ${confirmDelete
         ? `<div class="safety-card">
-             <b>確定要刪除嗎？</b>
+             <b>🗑 確定要刪除嗎？</b>
              <p>刪掉之後就找不回來了。如果你已經加到手機行事曆，那一份不會跟著刪除。</p>
              <button class="danger-btn" type="button" data-action="delete-record-confirm" data-id="${esc(app.id)}">確定刪除</button>
              <button class="ghost-btn" type="button" data-action="delete-record-cancel">取消</button>
@@ -909,18 +1070,32 @@ export function recordDetailHtml(app, confirmDelete) {
 export function modalHtml(kind, { version, lineUrl, message } = {}) {
   const bodies = {
     release: `
-      <span class="eyebrow">版本更新</span>
+      <span class="eyebrow">版本更新 🆕</span>
       <h2>${esc(version)}</h2>
-      <ul>
-        <li>查詢可同時指定藥劑與作物，只列出真的核准用在這個作物上的藥。</li>
-        <li>試算頁新增常用藥劑下拉，可釘選也會自動累積最近用過的。</li>
-        <li>土地管理：選一塊地就帶入面積與作物。</li>
-        <li>施作紀錄與月曆，可推算參考最早採收日。</li>
-        <li>紀錄可複製或加入手機行事曆，另外提供匯出備份。</li>
-        <li>查過的藥劑會存在本機，沒訊號時仍可翻查。</li>
-      </ul>`,
+      <div class="release-log">
+        <b>v1.3.0・這一版</b>
+        <ul>
+          <li>搜尋結果會標出「已核准」並排在前面，也看得到廠商跟許可證號，同名藥劑不再分不清。</li>
+          <li>查不到核准範圍時會說明原因，而且照樣可以完成施作紀錄。</li>
+          <li>紀錄新增「其他添加物」，光合菌、展著劑這類自己配的也記得下來。</li>
+          <li>紀錄頁改顯示實際稀釋倍數，並列出每支藥各自的可採收日。</li>
+        </ul>
+
+        <b>v1.2.0</b>
+        <ul>
+          <li>查詢可以同時指定藥劑與作物。</li>
+          <li>試算頁新增常用藥劑下拉，可釘選也會自動累積最近用過的。</li>
+        </ul>
+
+        <b>v1.1.0</b>
+        <ul>
+          <li>土地管理、施作紀錄與月曆，可推算參考最早採收日。</li>
+          <li>紀錄可複製或加入手機行事曆，另外提供匯出備份。</li>
+          <li>查過的藥劑會存在本機，沒訊號時仍可翻查。</li>
+        </ul>
+      </div>`,
     install: `
-      <span class="eyebrow">安裝到手機</span>
+      <span class="eyebrow">安裝到手機 📲</span>
       <h2>把田間用藥帶著走</h2>
       <p>iPhone：用 Safari 開啟，點分享，再選「加入主畫面」。<br />Android：用 Chrome 開啟選單，選「安裝應用程式」。</p>
       <p>安裝之後資料被系統清理的機率較低，也能在沒訊號的田裡開啟。</p>`,

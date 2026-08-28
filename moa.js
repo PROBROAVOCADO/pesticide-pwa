@@ -96,8 +96,31 @@ export async function searchDrugs(query) {
   return uniqueDrugs(batches.flatMap((b) => b.rows)).slice(0, 80);
 }
 
-/** 取得一項藥劑的核准使用範圍。官方欄位有時是 http，統一升級為 https 以免被瀏覽器擋掉。 */
+/**
+ * 卡片副標題第二行：用來分辨同名藥劑。
+ *
+ * 官方資料裡很多產品的「廠牌名稱」是空的，標題只好退回普通名稱，
+ * 於是一整排都顯示「賽洛寧」。廠商名稱與許可證號才分得出是哪一支。
+ */
+export const drugIdentity = (d) =>
+  [text(d['廠商名稱']), license(d)].filter(Boolean).join('・');
+
+/**
+ * 取得一項藥劑的核准使用範圍。
+ *
+ * 回傳 { ranges, status }，status 用來區分三種「沒有資料」：
+ *   ok       正常取得
+ *   no-link  這筆登記本身就沒有附使用範圍的連結（原體、或官方尚未提供）
+ *   empty    連結有，但官方回傳空清單
+ *
+ * 分清楚很重要 —— 使用者看到「沒有核准範圍」時，
+ * 應該知道是這支藥真的沒登記用途，還是我們讀不到。
+ */
 export async function loadRanges(drug) {
   const url = text(drug['農藥使用範圍']);
-  return url ? fetchJson(url.replace(/^http:/, 'https:')) : [];
+  if (!url) return { ranges: [], status: 'no-link' };
+
+  const ranges = await fetchJson(url.replace(/^http:/, 'https:'));
+  const rows = Array.isArray(ranges) ? ranges : [];
+  return { ranges: rows, status: rows.length ? 'ok' : 'empty' };
 }

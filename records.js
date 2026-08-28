@@ -163,6 +163,17 @@ export function buildRecordText(app) {
     if (drug.interval) lines.push(`   施藥間隔：${drug.interval}`);
   });
 
+  // 自製或市售的微生物肥料、展著劑等，不在農藥登記資料裡，但同一桶下去了就該記下來。
+  if (app.additives?.length) {
+    lines.push('', '同時添加：');
+    app.additives.forEach((a, i) => {
+      const amount = [a.amount, a.unit].filter(Boolean).join(' ');
+      lines.push(`${i + 1}. ${a.name}${amount ? ` ${amount}` : ''}`);
+      if (a.note) lines.push(`   ${a.note}`);
+    });
+    lines.push('（非農藥登記品項，不列入安全採收期推算）');
+  }
+
   if (app.note) lines.push('', `備註：${app.note}`);
 
   if (app.harvestDate) {
