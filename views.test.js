@@ -105,6 +105,11 @@ describe('drugCardHtml：商品名與普通名都要看得見', () => {
     assert.ok(card.includes('✅ 已核准'));
   });
 
+  it('搜尋結果可以用許可證定位正確卡片', () => {
+    const result = drugCardHtml(銅右滅達樂, 'open-detail', 'data-license="農藥製07146"', false, 'yes', '');
+    assert.ok(result.includes('data-license="農藥製07146"'));
+  });
+
   it('沒有廠牌名稱時不會重複列兩次普通名', () => {
     const noBrand = drugCardHtml({ ...銅右滅達樂, 廠牌名稱: '' }, 'pick', '', false, undefined, '');
     assert.ok(noBrand.includes('<strong>銅右滅達樂</strong>'));

@@ -216,6 +216,29 @@ mark{background:#fff0b8;color:var(--ink);border-radius:3px;padding:0 1px;font-we
 .scan-note{margin:9px 2px;font-size:12px;color:var(--brown);font-weight:600}
 .scan-note.done{color:var(--muted);font-weight:500}
 
+/* 手機結果卡：長廠商名、許可證狀態或標籤都不能把頁面撐寬 */
+.screen,.view,#search-results,.drug-grid{min-width:0;max-width:100%}
+.drug-grid{width:100%;grid-template-columns:minmax(0,1fr)}
+.drug-card{min-width:0;max-width:100%;overflow:hidden;padding:14px 15px}
+.drug-card>*{min-width:0;max-width:100%}
+.drug-card strong,.drug-card .common-name,.drug-card>span:not(.drug-topline),.drug-card small{
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+.drug-card small{display:block;width:100%}
+.status-tag{align-self:flex-start;white-space:normal}
+
+@media (max-width:420px){
+  .drug-card{padding:13px 14px;border-radius:15px;gap:2px}
+  .drug-card strong{font-size:18px;line-height:1.45}
+  .drug-card small{font-size:11px;white-space:normal;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+  .kind,.approve-tag{padding:2px 8px}
+}
+
+@media (min-width:640px){
+  .drug-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
 /* 試算頁結果清單：拉高一點，小框太難找東西 */
 .result-list{max-height:360px}
 .compact-field{margin-bottom:8px}

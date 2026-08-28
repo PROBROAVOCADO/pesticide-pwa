@@ -19,7 +19,7 @@ import {
   saveField,
   searchCachedDrugs,
 } from './db.js';
-import { drugTitle, filterDrugs, license, loadRanges, matchesCrop, searchDrugs, statusRank, text } from './moa.js';
+import { drugTitle, filterDrugs, license, loadRanges, matchesCrop, scanDrugsByCrop, searchDrugs, statusRank, text } from './moa.js';
 import {
   buildIcs,
   buildRecordText,
@@ -50,7 +50,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.4.0';
+const VERSION = 'v1.4.1';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -342,41 +342,6 @@ async function rangesWithFallback(drug) {
   }
 }
 
-/**
- * 作物不在 PesticideData 裡 —— 它藏在每一支藥各自的「農藥使用範圍」子資料。
- * 所以「藥名＋作物」只能先用藥名查，再逐一拓展範圍比對作物。
- * 每一支都是一次網路請求，所以要限制筆數與同時數，而且被截掉的部分一定要講出來。
- */
-const CROP_SCAN_LIMIT = 24;
-const CROP_SCAN_CONCURRENCY = 6;
-
-async function filterDrugsByCrop(drugs, crop, onProgress) {
-  const candidates = drugs.slice(0, CROP_SCAN_LIMIT);
-  const hits = new Array(candidates.length).fill(null);
-  let next = 0;
-  let done = 0;
-
-  const worker = async () => {
-    while (next < candidates.length) {
-      const i = next++;
-      const { ranges } = await rangesWithFallback(candidates[i]);
-      // 用索引位置回填，結果才會保持原本的相關度排序。
-      if (ranges.some((r) => matchesCrop(r, crop))) hits[i] = candidates[i];
-      onProgress((done += 1), candidates.length);
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(CROP_SCAN_CONCURRENCY, candidates.length) }, worker),
-  );
-
-  return {
-    matched: hits.filter(Boolean),
-    scanned: candidates.length,
-    truncated: drugs.length > CROP_SCAN_LIMIT,
-  };
-}
-
 /** 只填作物時的備援：翻查這台裝置已經抓過使用範圍的藥劑。 */
 async function searchCachedByCrop(crop) {
   const rows = await allCached();
@@ -452,22 +417,29 @@ async function runMainSearch() {
       state.search.message = `找到 ${rows.length} 筆，正在逐一比對「${crop}」…`;
       render();
 
-      const { matched, scanned, truncated } = await filterDrugsByCrop(rows, crop, (n, total) =>
-        setSearchProgress(`正在比對「${crop}」…（${n}／${total}）`),
+      const { matched, scanned, failed } = await scanDrugsByCrop(
+        rows,
+        crop,
+        rangesWithFallback,
+        {
+          concurrency: 8,
+          onProgress: (n, total) => setSearchProgress(`正在完整比對「${crop}」…（${n}／${total}）`),
+        },
       );
 
       state.search.drugs = matched;
       state.search.message = matched.length
-        ? `${scanned} 筆之中，有 ${matched.length} 筆核准用於「${crop}」`
-        : `查到的 ${scanned} 筆藥劑都沒有核准用於「${crop}」`;
+        ? `完整比對 ${scanned} 筆，其中 ${matched.length} 筆核准用於「${crop}」`
+        : `完整比對的 ${scanned} 筆藥劑都沒有核准用於「${crop}」`;
 
       const notes = [];
       if (fromCache) notes.push('目前連不上官方資料，以下是這台裝置查過的藥劑。');
-      if (truncated) {
+      if (failed) {
         notes.push(
-          `藥劑名稱符合的有 ${rows.length} 筆，為了不讓查詢太慢，只比對了前 ${scanned} 筆。把藥劑名稱打得更完整可以縮小範圍。`,
+          `其中 ${failed} 筆使用範圍暫時讀不到，沒有把未知狀態誤標成未核准，稍後可再查一次。`,
         );
       }
+      if (capped) notes.push('官方藥劑主清單已達單次回傳上限，可能仍有未取得的登記產品。');
       state.search.note = notes.join('');
     }
   } catch (error) {
@@ -1034,7 +1006,10 @@ const ACTIONS = {
   },
 
   /* 查詢 */
-  'open-detail': (d) => openDetail(state.search.drugs[Number(d.idx)]),
+  'open-detail': (d) => {
+    const drug = state.search.drugs.find((row) => license(row) === d.license);
+    if (drug) openDetail(drug);
+  },
 
   /* 試算 */
   'add-item': () => {

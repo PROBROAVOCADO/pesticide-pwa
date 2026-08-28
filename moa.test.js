@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { classTone, drugSubtitle, drugTitle, license, licenseStatus, matchesCrop, normalize, parseRocDate, statusRank, uniqueDrugs } from './moa.js';
+import { classTone, drugSubtitle, drugTitle, license, licenseStatus, matchesCrop, normalize, parseRocDate, scanDrugsByCrop, statusRank, uniqueDrugs } from './moa.js';
 
 describe('normalize：作物名稱正規化', () => {
   it('臺與台視為同一個字', () => {
@@ -62,6 +62,32 @@ describe('matchesCrop：使用範圍是否符合這個作物', () => {
   it('作物名稱欄位是空的時候不會誤判成符合', () => {
     assert.equal(matchesCrop(range(''), '酪梨'), false);
     assert.equal(matchesCrop(range(null), '酪梨'), false);
+  });
+});
+
+describe('scanDrugsByCrop：完整比對藥名搜尋結果', () => {
+  it('排在第 24 筆之後的核准廠牌也不會漏掉', async () => {
+    const drugs = Array.from({ length: 80 }, (_, i) => ({
+      許可證字: '農藥進',
+      許可證號: String(i + 1).padStart(5, '0'),
+      廠牌名稱: i === 71 ? '大卡稱' : `廠牌 ${i + 1}`,
+    }));
+    const progress = [];
+
+    const result = await scanDrugsByCrop(
+      drugs,
+      '酪梨',
+      async (drug) => ({
+        ranges: drug.廠牌名稱 === '大卡稱' ? [{ 作物名稱: '酪梨' }] : [{ 作物名稱: '水稻' }],
+        status: 'ok',
+      }),
+      { concurrency: 4, onProgress: (done, total) => progress.push([done, total]) },
+    );
+
+    assert.equal(result.scanned, 80);
+    assert.equal(result.failed, 0);
+    assert.deepEqual(result.matched.map((d) => d.廠牌名稱), ['大卡稱']);
+    assert.deepEqual(progress.at(-1), [80, 80]);
   });
 });
 

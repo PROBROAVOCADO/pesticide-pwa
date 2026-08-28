@@ -188,7 +188,7 @@ export function searchResultsHtml({ drugs, loading, allApproved, total, matched,
     : drugs.length
       ? `${trimmed}
          <div class="drug-grid">${drugs
-           .map((d, i) => drugCardHtml(d, 'open-detail', `data-idx="${i}"`, false, allApproved ? 'yes' : undefined, keyword))
+           .map((d) => drugCardHtml(d, 'open-detail', `data-license="${esc(license(d))}"`, false, allApproved ? 'yes' : undefined, keyword))
            .join('')}</div>`
       : total
         ? `<div class="welcome-card">
@@ -1199,7 +1199,14 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
       <span class="eyebrow">版本更新 🆕</span>
       <h2>${esc(version)}</h2>
       <div class="release-log">
-        <b>v1.4.0・這一版</b>
+        <b>v1.4.1・這一版</b>
+        <ul>
+          <li>藥名搭配作物時會完整比對所有登記產品，不再只查前 24 筆。</li>
+          <li>手機上的藥劑卡片會自動換行並限制在畫面內，不再被長文字撐寬。</li>
+          <li>在結果內再篩選廠牌後，點卡片會開啟正確的藥劑明細。</li>
+        </ul>
+
+        <b>v1.4.0</b>
         <ul>
           <li>卡片同時顯示商品名與普通名，並把搜尋字串標成黃底 —— 打「滅達」找「銅右滅達樂」不會再漏掉。</li>
           <li>許可證已到期或已撤銷會明確標出來，不再當成有效藥劑。</li>

@@ -94,6 +94,54 @@ export function matchesCrop(range, crop) {
   return official.includes(wanted) || wanted.includes(official);
 }
 
+/**
+ * 把藥名搜尋到的每一筆登記都翻開，比對是否核准用於指定作物。
+ *
+ * 使用範圍不在藥劑主清單裡，所以這裡必須逐筆讀取；不能只掃前幾筆，
+ * 否則同成分但排序較後面的廠牌會被誤判成「未核准」。
+ * loader 由畫面層傳入，讓正式環境可以沿用本機快取，也方便單元測試。
+ */
+export async function scanDrugsByCrop(
+  drugs,
+  crop,
+  loader,
+  { concurrency = 8, onProgress = () => {} } = {},
+) {
+  const candidates = Array.isArray(drugs) ? drugs : [];
+  const hits = new Array(candidates.length).fill(null);
+  let next = 0;
+  let done = 0;
+  let failed = 0;
+
+  const worker = async () => {
+    while (next < candidates.length) {
+      const i = next++;
+      try {
+        const result = await loader(candidates[i]);
+        const ranges = Array.isArray(result) ? result : result?.ranges;
+        if (result?.status === 'failed') failed += 1;
+        if (Array.isArray(ranges) && ranges.some((range) => matchesCrop(range, crop))) {
+          hits[i] = candidates[i];
+        }
+      } catch {
+        failed += 1;
+      } finally {
+        onProgress((done += 1), candidates.length);
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(Math.max(1, concurrency), candidates.length) }, worker),
+  );
+
+  return {
+    matched: hits.filter(Boolean),
+    scanned: candidates.length,
+    failed,
+  };
+}
+
 async function fetchJson(url) {
   const response = await fetch(url, { headers: { accept: 'application/json' }, cache: 'no-store' });
   if (!response.ok) throw new Error(`官方資料暫時無法讀取（${response.status}）`);
