@@ -190,3 +190,34 @@
 @media (min-width:1280px){
   .topbar,.screen{max-width:900px}
 }
+
+/* 關鍵字高亮 */
+mark{background:#fff0b8;color:var(--ink);border-radius:3px;padding:0 1px;font-weight:700}
+.drug-card.compact mark{background:#ffe9a0}
+
+/* 分類標籤：改成標示而不是過濾，所以顏色要分得出來 */
+.kind.fungicide{background:var(--herb)}
+.kind.insecticide{background:var(--brick)}
+.kind.herbicide{background:var(--gold)}
+.kind.other{background:var(--muted)}
+.kind.soft{background:var(--sunken);color:var(--brown);border:1px solid var(--rule)}
+.drug-topline{flex-wrap:wrap;gap:5px;justify-content:flex-start}
+
+/* 普通名：農友是用這個在搜尋，不能藏在小字裡 */
+.common-name{display:block;font-size:15px;color:var(--brown);margin:1px 0 2px}
+.drug-card.compact .common-name{font-size:14px}
+
+/* 許可證已撤銷或到期 */
+.drug-card.inactive{background:#fbf4ef;border-color:rgba(156,69,53,.3)}
+.drug-card.inactive strong,.drug-card.inactive .common-name{opacity:.75}
+.status-tag{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:999px;background:var(--brick);color:#fff;font-size:11px;font-weight:700}
+
+/* 掃描進度 */
+.scan-note{margin:9px 2px;font-size:12px;color:var(--brown);font-weight:600}
+.scan-note.done{color:var(--muted);font-weight:500}
+
+/* 試算頁結果清單：拉高一點，小框太難找東西 */
+.result-list{max-height:360px}
+.compact-field{margin-bottom:8px}
+.compact-field input{height:46px}
+@media (min-width:900px){ .result-list{max-height:460px} }

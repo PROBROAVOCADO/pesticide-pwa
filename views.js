@@ -6,7 +6,7 @@
  */
 
 import { AREA_UNITS, actualDilution, calcRange, formatRange, formatWater } from './calc.js';
-import { drugIdentity, drugSubtitle, drugTitle, license, text } from './moa.js';
+import { classTone, drugIdentity, drugSubtitle, drugTitle, license, licenseStatus, text } from './moa.js';
 import {
   addDays,
   areaLabel,
@@ -29,17 +29,55 @@ const AREA_UNIT_LABEL = Object.fromEntries(AREA_UNITS.map((u) => [u.value, u.lab
 /* ------------------------------------------------------------------ */
 
 /**
+ * 把關鍵字標起來。
+ *
+ * 每一段文字都各自 escape 之後才拼接，只有 <mark> 是我們自己插進去的字面標籤 ——
+ * 官方資料裡的任何角括號都不會變成 HTML。
+ */
+export function highlight(value, keyword) {
+  const source = String(value ?? '');
+  const needle = String(keyword ?? '').trim();
+  if (!needle) return esc(source);
+
+  const haystack = source.toLowerCase();
+  const lower = needle.toLowerCase();
+
+  let out = '';
+  let from = 0;
+  for (;;) {
+    const at = haystack.indexOf(lower, from);
+    if (at === -1) {
+      out += esc(source.slice(from));
+      return out;
+    }
+    out += esc(source.slice(from, at));
+    out += `<mark>${esc(source.slice(at, at + needle.length))}</mark>`;
+    from = at + needle.length;
+  }
+}
+
+/**
  * 藥劑卡。
  *
- * 廠商名稱與許可證號一律顯示，連精簡版也是 —— 官方資料裡很多產品沒有廠牌名稱，
- * 標題只好退回普通名稱，於是一整排都叫「賽洛寧」，不附廠商就分不出是哪一支。
+ * 兩個名字都要看得見：
+ *   廠牌名稱（商品名）—— 農友去農藥行是報這個
+ *   中文名稱（普通名）—— 農友是用這個在搜尋
  *
- * approval：'yes' 已核准／'no' 有登記但沒這個作物／'none' 這支藥根本沒有使用範圍／
- * undefined 讀不到，不知道。最後一種刻意留白 —— 不知道不能標成未核准。
+ * 只顯示其中一個都會出事。全部退回普通名時一整排都叫「賽洛寧」分不出來；
+ * 只顯示廠牌時，打「滅達」找「銅右滅達樂」，畫面上出現的卻是「金手指」「立達樂」，
+ * 東西明明在清單裡卻認不出來。所以兩個並列，再把搜尋字串標起來。
+ *
+ * approval：'yes' 已核准／'no' 有登記但沒這個作物／'none' 沒有使用範圍／
+ * undefined 還沒比對或讀不到。最後一種刻意留白 —— 不知道不能標成未核准。
  */
-export function drugCardHtml(drug, action, dataAttr, compact, approval) {
+export function drugCardHtml(drug, action, dataAttr, compact, approval, keyword = '') {
   const kind = text(drug['農藥分類中文意義']);
-  const badge =
+  const mixture = text(drug['農藥類別中文意義']);
+  const brand = text(drug['廠牌名稱']);
+  const common = text(drug['中文名稱']);
+  const status = licenseStatus(drug);
+
+  const approvalTag =
     approval === 'yes'
       ? '<span class="approve-tag ok">✅ 已核准</span>'
       : approval === 'no'
@@ -48,15 +86,34 @@ export function drugCardHtml(drug, action, dataAttr, compact, approval) {
           ? '<span class="approve-tag none">無使用範圍</span>'
           : '';
 
+  const statusTag =
+    status.state === 'valid'
+      ? ''
+      : `<span class="status-tag">${status.state === 'revoked' ? '⛔' : '⌛'} ${esc(status.label)}</span>`;
+
+  // 標題永遠是廠牌；沒有廠牌才退回普通名，那時候普通名就不必再列一次。
+  const title = brand || common || license(drug);
+  const showCommon = Boolean(brand && common);
+
+  const spec = [text(drug['含量']), text(drug['劑型'])].filter(Boolean).join(' ');
+  const meta = [text(drug['廠商名稱']), license(drug)].filter(Boolean).join('・');
+  const until = status.date
+    ? `・${status.state === 'revoked' ? '撤銷於' : status.state === 'expired' ? '已於' : '有效至'} ${status.date.replace(/-/g, '/')}${status.state === 'expired' ? ' 到期' : ''}`
+    : '';
+
   return `
-    <button class="drug-card${compact ? ' compact' : ''}" type="button" data-action="${action}" ${dataAttr}>
+    <button class="drug-card${compact ? ' compact' : ''}${status.state !== 'valid' ? ' inactive' : ''}"
+            type="button" data-action="${action}" ${dataAttr}>
       <span class="drug-topline">
-        <span class="kind${kind === '殺菌劑' ? ' fungicide' : ''}">${esc(kind)}</span>
-        ${badge}
+        <span class="kind ${classTone(kind)}">${esc(kind || '未分類')}</span>
+        ${mixture ? `<span class="kind soft">${esc(mixture)}</span>` : ''}
+        ${approvalTag}
       </span>
-      <strong>${esc(drugTitle(drug))}</strong>
-      <span>${esc(drugSubtitle(drug))}</span>
-      <small>${esc(drugIdentity(drug))}</small>
+      <strong>${highlight(title, keyword)}</strong>
+      ${showCommon ? `<b class="common-name">${highlight(common, keyword)}</b>` : ''}
+      ${spec ? `<span>${esc(spec)}</span>` : ''}
+      <small>${highlight(meta, keyword)}${esc(until)}</small>
+      ${statusTag}
     </button>`;
 }
 
@@ -91,7 +148,7 @@ export function searchViewHtml({
       <div class="hero">
         <span>合法用藥，先查再下田</span>
         <h2>農藥登記資料，<br />整理成好讀的田間小冊。</h2>
-        <p>目前聚焦殺菌劑與殺蟲劑，資料來自農業部及動植物防疫檢疫署。</p>
+        <p>資料來自農業部及動植物防疫檢疫署，每一支都標出分類與許可證狀態。</p>
       </div>
 
       <form class="search-box" id="search-form">
@@ -112,7 +169,7 @@ export function searchViewHtml({
 
       ${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
 
-      <div id="search-results">${searchResultsHtml({ drugs, loading, allApproved, total, matched, shownLimit })}</div>
+      <div id="search-results">${searchResultsHtml({ drugs, loading, allApproved, total, matched, shownLimit, keyword: filter.trim() || query })}</div>
     </section>`;
 }
 
@@ -120,7 +177,7 @@ export function searchViewHtml({
  * 只有結果卡片的部分。獨立出來，是為了讓篩選欄打字時只重畫這一塊 ——
  * 整頁重畫會把輸入框拆掉重建，游標就跑掉了。
  */
-export function searchResultsHtml({ drugs, loading, allApproved, total, matched, shownLimit }) {
+export function searchResultsHtml({ drugs, loading, allApproved, total, matched, shownLimit, keyword = '' }) {
   const trimmed =
     matched > shownLimit
       ? `<p class="offline-note">符合的有 ${matched} 筆，畫面只列前 ${shownLimit} 筆。用上面的篩選欄再縮小範圍，就看得到其餘的。</p>`
@@ -131,7 +188,7 @@ export function searchResultsHtml({ drugs, loading, allApproved, total, matched,
     : drugs.length
       ? `${trimmed}
          <div class="drug-grid">${drugs
-           .map((d, i) => drugCardHtml(d, 'open-detail', `data-idx="${i}"`, false, allApproved ? 'yes' : undefined))
+           .map((d, i) => drugCardHtml(d, 'open-detail', `data-idx="${i}"`, false, allApproved ? 'yes' : undefined, keyword))
            .join('')}</div>`
       : total
         ? `<div class="welcome-card">
@@ -141,7 +198,7 @@ export function searchResultsHtml({ drugs, loading, allApproved, total, matched,
         : `<div class="welcome-card">
              <b>🔍 可以查什麼？</b>
              <p>上面填藥劑的普通名稱、商品廠牌或農藥代號，下面填作物。兩欄都填的話，只會列出真的核准用在這個作物上的藥，省得一支一支點開看。</p>
-             <p>同一個成分常常有幾十個廠牌。查普通名稱（例如「亞托敏」）如果找不到你要的那支，直接打廠牌名稱（例如「大卡稱」）最快 👍</p>
+             <p>同一個成分常常有幾十個廠牌，卡片上會把商品名和普通名一起列出來，搜尋字串也會標起來。找不到想要的那支時，直接打廠牌名稱最快 👍</p>
            </div>`;
 }
 
@@ -339,6 +396,32 @@ function favoritesSelectHtml(item, favorites) {
     </label>`;
 }
 
+/**
+ * 試算頁的搜尋結果清單。
+ *
+ * 掃描核准狀態時只重畫這一塊，輸入框不會被拆掉。
+ * 進度一定要顯示出來 —— 使用者必須知道「已核准優先」的排序涵蓋到第幾支，
+ * 不然會以為沒被標到的就是沒核准。
+ */
+export function itemResultsHtml(item, crop) {
+  const visible = item.visible || item.results;
+  if (!visible.length && !item.scanning) return '';
+
+  const progress = item.scanning
+    ? `<p class="scan-note">正在比對「${esc(crop)}」的核准範圍…（${item.scanned}／${item.scanTotal}）</p>`
+    : item.scanTotal
+      ? `<p class="scan-note done">已比對前 ${item.scanTotal} 支${item.results.length > item.scanTotal ? `，其餘 ${item.results.length - item.scanTotal} 支未比對` : ''}。已核准的排在前面。</p>`
+      : '';
+
+  const keyword = item.filter.trim() || item.query;
+
+  return `
+    ${progress}
+    <div class="result-list">${visible
+      .map((d) => drugCardHtml(d, 'item-pick', `data-id="${item.id}" data-key="${esc(license(d))}"`, true, item.approvalOf?.[license(d)], keyword))
+      .join('')}</div>`;
+}
+
 function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
   const head = `
     <div class="calc-drug-head">
@@ -349,16 +432,14 @@ function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
   const error = item.error ? `<p class="field-error">${esc(item.error)}</p>` : '';
 
   if (!item.drug) {
-    const scanning = item.scanning
-      ? `<p class="scan-note">正在比對「${esc(crop)}」的核准範圍…（${item.scanned}／${item.scanTotal}）</p>`
+    // 有結果才給篩選欄，而且放在清單外面 —— 清單重畫時輸入框才不會被拆掉。
+    const filterBox = item.results.length > 6
+      ? `<label class="field compact-field">
+           <span>在這 ${item.results.length} 筆裡再找</span>
+           <input data-field="item-filter" data-id="${item.id}" value="${esc(item.filter)}"
+                  placeholder="輸入廠牌、廠商或許可證號" />
+         </label>`
       : '';
-
-    const results = item.results.length
-      ? `${scanning}
-         <div class="result-list">${item.results
-           .map((d, i) => drugCardHtml(d, 'item-pick', `data-id="${item.id}" data-idx="${i}"`, true, item.approvals?.[i]))
-           .join('')}</div>`
-      : scanning;
 
     return `
       <article class="calc-drug">
@@ -372,7 +453,8 @@ function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
           </button>
         </div>
         ${error}
-        ${results}
+        ${filterBox}
+        <div data-results="${item.id}">${itemResultsHtml(item, crop)}</div>
       </article>`;
   }
 
@@ -399,7 +481,7 @@ function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
         <div>
           <strong>${esc(drugTitle(item.drug))}</strong>
           <span>${esc(drugSubtitle(item.drug))}</span>
-          <small>${esc(drugIdentity(item.drug))}</small>
+          <small>${esc(drugIdentity(item.drug))}${licenseStatus(item.drug).state !== 'valid' ? `・${esc(licenseStatus(item.drug).label)}` : ''}</small>
         </div>
         <button type="button" data-action="item-reset" data-id="${item.id}">更換</button>
       </div>
@@ -687,6 +769,7 @@ export function settingsViewHtml({ version, aphiaUrl, fieldCount, appCount, pers
       <article class="about-card">
         <h3>📖 資料與責任說明</h3>
         <p>藥劑資料取自農業部「農藥資料查詢」及動植物防疫檢疫署登記資訊，每週更新。官方也明確提醒，公開使用範圍僅供參考，實際施藥應依產品標示及最新公告。</p>
+        <p><b>搜尋結果不做分類過濾。</b>除草劑、殺蟎劑，以及許可證已到期或已撤銷的，都會照樣列出來並標示狀態 —— 把你手上可能有的藥藏起來，比列出來讓你自己判斷更危險。</p>
         <p>本工具不替代農藥標示、專業診斷或農業主管機關指導。若作物、病蟲害或單位無法確定，請先向農業改良場、農會或合格農藥販賣業者確認。</p>
         <a href="${aphiaUrl}" target="_blank" rel="noreferrer">前往官方農藥資訊服務網</a>
       </article>
@@ -1116,7 +1199,15 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
       <span class="eyebrow">版本更新 🆕</span>
       <h2>${esc(version)}</h2>
       <div class="release-log">
-        <b>v1.3.1・這一版</b>
+        <b>v1.4.0・這一版</b>
+        <ul>
+          <li>卡片同時顯示商品名與普通名，並把搜尋字串標成黃底 —— 打「滅達」找「銅右滅達樂」不會再漏掉。</li>
+          <li>許可證已到期或已撤銷會明確標出來，不再當成有效藥劑。</li>
+          <li>不再依分類過濾搜尋結果，除草劑、殺蟎劑照樣列出並標示。</li>
+          <li>試算頁的結果清單加上筆數、篩選欄與比對進度，核准比對從 12 支提高到 40 支。</li>
+        </ul>
+
+        <b>v1.3.1</b>
         <ul>
           <li>查詢一次抓更多筆，被官方截斷時會明講，並新增「在結果裡再找」的篩選欄。</li>
           <li>電腦上底部分頁改成左側欄。</li>
@@ -1131,11 +1222,6 @@ export function modalHtml(kind, { version, lineUrl, message } = {}) {
           <li>紀錄頁改顯示實際稀釋倍數，並列出每支藥各自的可採收日。</li>
         </ul>
 
-        <b>v1.2.0</b>
-        <ul>
-          <li>查詢可以同時指定藥劑與作物。</li>
-          <li>試算頁新增常用藥劑下拉，可釘選也會自動累積最近用過的。</li>
-        </ul>
       </div>`,
     install: `
       <span class="eyebrow">安裝到手機 📲</span>

@@ -7,9 +7,51 @@ const MOA_API = 'https://data.moa.gov.tw/Service/OpenData/FromM/PesticideData.as
 /** 把可能是 null／undefined 的欄位值轉成去頭尾空白的字串。 */
 export const text = (v) => String(v ?? '').trim();
 
-/** 目前只收錄仍有效（未撤銷）的殺菌劑與殺蟲劑。 */
-export const isAllowed = (d) =>
-  ['殺菌劑', '殺蟲劑'].includes(text(d['農藥分類中文意義'])) && !text(d['撤銷類別']);
+/**
+ * 民國日期轉西元：「106/12/13」→「2017-12-13」。
+ * 官方的有效期限與撤銷日期都用這個格式，空白時是「   /  /  」。
+ */
+export function parseRocDate(raw) {
+  const m = String(raw ?? '').match(/(\d{2,3})\s*\/\s*(\d{1,2})\s*\/\s*(\d{1,2})/);
+  if (!m) return null;
+  const [, y, mo, d] = m.map(Number);
+  if (!y || !mo || !d) return null;
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${y + 1911}-${pad(mo)}-${pad(d)}`;
+}
+
+/**
+ * 這張許可證的狀態。
+ *
+ * 有效期限過了但「撤銷類別」是空的，這種資料官方照樣給 ——
+ * 例如農藥進02068 的有效期限是 106/12/13（2017 年）。
+ * 只看撤銷類別會把它當成有效藥劑列出來，那是「顯示成可用、實際不可用」，
+ * 比查不到還危險。所以兩個欄位都要看。
+ */
+export function licenseStatus(drug, today = new Date().toISOString().slice(0, 10)) {
+  const revoked = text(drug['撤銷類別']);
+  if (revoked) {
+    return { state: 'revoked', label: `已撤銷（${revoked}）`, date: parseRocDate(drug['撤銷日期']) };
+  }
+
+  const until = parseRocDate(drug['有效期限']);
+  if (until && until < today) return { state: 'expired', label: '許可證已到期', date: until };
+
+  return { state: 'valid', label: '', date: until };
+}
+
+/**
+ * 分類的顯示樣式。
+ *
+ * 這裡刻意不再拿分類來過濾搜尋結果 —— 把農友真的會用的藥藏起來，
+ * 比列出來讓他自己判斷危險得多。改成標示，讓人一眼看得出這是什麼藥。
+ */
+export function classTone(kind) {
+  if (kind.includes('殺菌')) return 'fungicide';
+  if (kind.includes('殺蟲') || kind.includes('殺蟎')) return 'insecticide';
+  if (kind.includes('除草')) return 'herbicide';
+  return 'other';
+}
 
 /** 許可證字號，也是這份資料裡最穩定的唯一識別。 */
 export const license = (d) => `${text(d['許可證字'])}${text(d['許可證號'])}`;
@@ -58,12 +100,23 @@ async function fetchJson(url) {
   return response.json();
 }
 
-/** 去除重複許可證，並濾掉不在收錄範圍內的藥劑。 */
+/** 排序用：有效的排前面，到期的其次，撤銷的最後。 */
+export const statusRank = (drug) => {
+  const state = licenseStatus(drug).state;
+  return state === 'valid' ? 0 : state === 'expired' ? 1 : 2;
+};
+
+/**
+ * 只做去重，不再過濾分類或撤銷狀態。
+ *
+ * 撤銷與過期的許可證照樣列出 —— 農友手上可能還有庫存，
+ * 知道「這支已經到期了」比完全查不到它更有用。狀態交給畫面標示。
+ */
 export function uniqueDrugs(rows) {
   const seen = new Set();
   return rows.filter((d) => {
     const key = `${text(d['許可證字'])}-${text(d['許可證號'])}`;
-    if (!key || seen.has(key) || !isAllowed(d)) return false;
+    if (key === '-' || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
@@ -106,10 +159,13 @@ export async function searchDrugs(query) {
 
   if (batches.every((b) => !b.ok)) throw new Error('目前連不上農業部的資料服務');
 
-  return {
-    drugs: uniqueDrugs(batches.flatMap((b) => b.rows)),
-    capped: batches.some((b) => b.rows.length >= MOA_TOP),
-  };
+  // 有效的排前面。過期或撤銷的照樣列出，但不該擋在有效藥劑前面。
+  const drugs = uniqueDrugs(batches.flatMap((b) => b.rows))
+    .map((drug, i) => ({ drug, rank: statusRank(drug), i }))
+    .sort((a, b) => a.rank - b.rank || a.i - b.i)
+    .map((o) => o.drug);
+
+  return { drugs, capped: batches.some((b) => b.rows.length >= MOA_TOP) };
 }
 
 /** 在已經拿到的結果裡再篩一次。查完普通名稱後想找特定廠牌時用。 */

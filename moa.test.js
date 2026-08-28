@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { drugSubtitle, drugTitle, isAllowed, license, matchesCrop, normalize, uniqueDrugs } from './moa.js';
+import { classTone, drugSubtitle, drugTitle, license, licenseStatus, matchesCrop, normalize, parseRocDate, statusRank, uniqueDrugs } from './moa.js';
 
 describe('normalize：作物名稱正規化', () => {
   it('臺與台視為同一個字', () => {
@@ -65,25 +65,75 @@ describe('matchesCrop：使用範圍是否符合這個作物', () => {
   });
 });
 
-describe('isAllowed：只收錄仍有效的殺菌劑與殺蟲劑', () => {
-  it('有效的殺菌劑', () => {
-    assert.equal(isAllowed({ 農藥分類中文意義: '殺菌劑', 撤銷類別: '' }), true);
+describe('parseRocDate：民國日期轉西元', () => {
+  it('三位數年份', () => {
+    assert.equal(parseRocDate('106/12/13'), '2017-12-13');
+    assert.equal(parseRocDate('120/07/12'), '2031-07-12');
   });
 
-  it('有效的殺蟲劑', () => {
-    assert.equal(isAllowed({ 農藥分類中文意義: '殺蟲劑', 撤銷類別: null }), true);
+  it('個位數月日補零', () => {
+    assert.equal(parseRocDate('115/1/5'), '2026-01-05');
   });
 
-  it('已撤銷的不收', () => {
-    assert.equal(isAllowed({ 農藥分類中文意義: '殺菌劑', 撤銷類別: '禁用' }), false);
-  });
-
-  it('除草劑不在收錄範圍', () => {
-    assert.equal(isAllowed({ 農藥分類中文意義: '除草劑', 撤銷類別: '' }), false);
+  it('空白格式回 null', () => {
+    assert.equal(parseRocDate('   /  /  '), null);
+    assert.equal(parseRocDate(''), null);
+    assert.equal(parseRocDate(null), null);
   });
 });
 
-describe('uniqueDrugs：去重與過濾', () => {
+describe('licenseStatus：許可證狀態', () => {
+  const base = { 撤銷類別: '', 撤銷日期: '   /  /  ', 有效期限: '120/07/12' };
+
+  it('未撤銷且未到期是有效', () => {
+    const r = licenseStatus(base, '2026-08-28');
+    assert.equal(r.state, 'valid');
+    assert.equal(r.date, '2031-07-12');
+  });
+
+  it('有效期限過了就算到期，即使撤銷類別是空的', () => {
+    // 農藥進02068 就是這種：有效期限 106/12/13，撤銷類別空白。
+    // 只看撤銷類別會把它當成有效藥劑列出來。
+    const r = licenseStatus({ ...base, 有效期限: '106/12/13' }, '2026-08-28');
+    assert.equal(r.state, 'expired');
+    assert.equal(r.date, '2017-12-13');
+  });
+
+  it('到期當天還算有效', () => {
+    const r = licenseStatus({ ...base, 有效期限: '115/08/28' }, '2026-08-28');
+    assert.equal(r.state, 'valid');
+  });
+
+  it('撤銷優先於到期', () => {
+    const r = licenseStatus({ ...base, 撤銷類別: '禁用', 有效期限: '106/12/13' }, '2026-08-28');
+    assert.equal(r.state, 'revoked');
+    assert.ok(r.label.includes('禁用'));
+  });
+
+  it('沒有有效期限時不亂猜，當成有效', () => {
+    const r = licenseStatus({ ...base, 有效期限: '' }, '2026-08-28');
+    assert.equal(r.state, 'valid');
+    assert.equal(r.date, null);
+  });
+});
+
+describe('classTone：分類的顯示樣式', () => {
+  it('認得複合寫法，不是只認完全相等的字串', () => {
+    assert.equal(classTone('殺菌劑'), 'fungicide');
+    assert.equal(classTone('殺菌殺蟎劑'), 'fungicide');
+    assert.equal(classTone('殺蟲劑'), 'insecticide');
+    assert.equal(classTone('殺蟲殺蟎劑'), 'insecticide');
+    assert.equal(classTone('殺蟎劑'), 'insecticide');
+    assert.equal(classTone('除草劑'), 'herbicide');
+  });
+
+  it('沒見過的分類歸到其他，不會爆掉', () => {
+    assert.equal(classTone('植物生長調節劑'), 'other');
+    assert.equal(classTone(''), 'other');
+  });
+});
+
+describe('uniqueDrugs：只去重，不過濾', () => {
   const make = (num, kind = '殺菌劑', revoked = '') => ({
     許可證字: '農藥製',
     許可證號: num,
@@ -95,9 +145,13 @@ describe('uniqueDrugs：去重與過濾', () => {
     assert.equal(uniqueDrugs([make('1'), make('1'), make('2')]).length, 2);
   });
 
-  it('順便濾掉撤銷與不符分類的', () => {
+  it('除草劑與已撤銷的都照樣留下 —— 藏起來比列出來危險', () => {
     const rows = [make('1'), make('2', '除草劑'), make('3', '殺蟲劑', '禁用')];
-    assert.equal(uniqueDrugs(rows).length, 1);
+    assert.equal(uniqueDrugs(rows).length, 3);
+  });
+
+  it('沒有許可證號的雜訊資料會被丟掉', () => {
+    assert.equal(uniqueDrugs([{ 許可證字: '', 許可證號: '' }]).length, 0);
   });
 
   it('空陣列不會出事', () => {
@@ -124,5 +178,21 @@ describe('顯示用的欄位組合', () => {
 
   it('副標題略過空欄位，不會出現多餘的分隔點', () => {
     assert.equal(drugSubtitle({ 中文名稱: '待克利', 含量: '', 劑型: '水懸劑' }), '待克利・水懸劑');
+  });
+});
+
+describe('statusRank：有效的要排在過期與撤銷的前面', () => {
+  const mk = (until, revoked = '') => ({ 有效期限: until, 撤銷類別: revoked, 撤銷日期: '   /  /  ' });
+
+  it('有效 0、到期 1、撤銷 2', () => {
+    assert.equal(statusRank(mk('130/01/01')), 0);
+    assert.equal(statusRank(mk('106/12/13')), 1);
+    assert.equal(statusRank(mk('130/01/01', '禁用')), 2);
+  });
+
+  it('拿來排序時，過期的不會擋在有效的前面', () => {
+    const rows = [mk('106/12/13'), mk('130/01/01'), mk('130/01/01', '禁用')];
+    const sorted = rows.map((d, i) => ({ d, r: statusRank(d), i })).sort((a, b) => a.r - b.r || a.i - b.i);
+    assert.deepEqual(sorted.map((x) => x.r), [0, 1, 2]);
   });
 });

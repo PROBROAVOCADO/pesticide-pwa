@@ -19,7 +19,7 @@ import {
   saveField,
   searchCachedDrugs,
 } from './db.js';
-import { drugTitle, filterDrugs, license, loadRanges, matchesCrop, searchDrugs, text } from './moa.js';
+import { drugTitle, filterDrugs, license, loadRanges, matchesCrop, searchDrugs, statusRank, text } from './moa.js';
 import {
   buildIcs,
   buildRecordText,
@@ -35,6 +35,7 @@ import {
   fieldFormHtml,
   fieldsSheetHtml,
   itemOutputHtml,
+  itemResultsHtml,
   modalHtml,
   recordDetailHtml,
   recordFormHtml,
@@ -49,7 +50,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.3.1';
+const VERSION = 'v1.4.0';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -88,8 +89,11 @@ let nextItemId = 1;
 const emptyItem = () => ({
   id: nextItemId++,
   query: '',
+  filter: '', // 在已取得的結果裡再篩一次
   results: [],
-  approvals: null, // 與 results 等長：'yes' | 'no' | undefined
+  visible: [],
+  // 以許可證號為鍵，這樣排序與篩選都不會讓標記對錯人
+  approvalOf: {}, // { 許可證: 'yes' | 'no' | 'none' }
   scanning: false,
   scanned: 0,
   scanTotal: 0,
@@ -261,6 +265,7 @@ function renderSearchResultsOnly() {
     total: s.drugs.length,
     matched: visible.length,
     shownLimit: SEARCH_DISPLAY_LIMIT,
+    keyword: s.filter.trim() || s.query,
   });
 }
 
@@ -433,8 +438,8 @@ async function runMainSearch() {
     if (!crop) {
       state.search.drugs = rows;
       state.search.message = rows.length
-        ? `找到 ${rows.length} 筆${fromCache ? '本機保存的' : '有效的殺菌／殺蟲'}藥劑`
-        : '沒有找到仍有效且符合分類的藥劑';
+        ? `找到 ${rows.length} 筆${fromCache ? '本機保存的' : '登記'}藥劑`
+        : '沒有找到符合的藥劑';
       const notes = [];
       if (fromCache) notes.push('目前連不上官方資料，以下是這台裝置查過的藥劑。');
       if (capped) {
@@ -486,47 +491,57 @@ async function openDetail(drug) {
 }
 
 /** 一次掃幾支藥來判斷有沒有核准用於目前作物。每一支都是一次網路請求。 */
-const APPROVAL_SCAN_LIMIT = 12;
-const APPROVAL_SCAN_CONCURRENCY = 4;
+const APPROVAL_SCAN_LIMIT = 40;
+const APPROVAL_SCAN_CONCURRENCY = 6;
 
 const approvalRank = (a) => (a === 'yes' ? 0 : a === undefined ? 1 : a === 'no' ? 2 : 3);
+
+/** 篩選後的可見結果。 */
+function refreshVisible(item) {
+  item.visible = filterDrugs(item.results, item.filter);
+}
+
+/** 只重畫這張藥劑卡的結果清單，並保住捲動位置。 */
+function renderItemResultsOnly(item) {
+  const holder = screenEl.querySelector(`[data-results="${item.id}"]`);
+  if (!holder) return;
+  const keep = holder.querySelector('.result-list')?.scrollTop ?? 0;
+  holder.innerHTML = itemResultsHtml(item, state.calc.crop.trim());
+  const list = holder.querySelector('.result-list');
+  if (list) list.scrollTop = keep;
+}
 
 /**
  * 幫搜尋結果標上「有沒有核准用於這個作物」，並把已核准的排到前面。
  *
- * 掃描時只更新那一行進度小字，不整頁重畫 —— 重畫會把輸入框拆掉重建。
+ * 每一支藥都要單獨發一次請求，所以只能掃前 APPROVAL_SCAN_LIMIT 支。
+ * 掃描期間標記逐一浮現、順序不動（正在看的清單被抽換很惱人），
+ * 全部掃完才重排一次。畫面上一定要寫清楚掃到第幾支 ——
+ * 一個只保證前面幾支準確的「已核准優先」，比不排序更會誤導人。
  */
 async function scanApprovals(item, crop) {
   const candidates = item.results.slice(0, APPROVAL_SCAN_LIMIT);
   if (!crop || !candidates.length) return;
 
-  item.approvals = new Array(item.results.length).fill(undefined);
+  item.approvalOf = {};
   item.scanning = true;
   item.scanned = 0;
   item.scanTotal = candidates.length;
-  render();
-
-  const progress = () => {
-    const el = screenEl.querySelector('.scan-note');
-    if (el) el.textContent = `正在比對「${crop}」的核准範圍…（${item.scanned}／${item.scanTotal}）`;
-  };
+  renderItemResultsOnly(item);
 
   let next = 0;
   const worker = async () => {
     while (next < candidates.length) {
-      const i = next++;
-      const { ranges, status } = await rangesWithFallback(candidates[i]);
-      // 讀不到的維持 undefined：不知道不等於未核准，不能亂標。
-      item.approvals[i] =
-        status === 'ok'
-          ? ranges.some((r) => matchesCrop(r, crop))
-            ? 'yes'
-            : 'no'
-          : status === 'failed'
-            ? undefined
-            : 'none';
+      const drug = candidates[next++];
+      const { ranges, status } = await rangesWithFallback(drug);
+      // 讀不到就不標：不知道不等於未核准。
+      if (status === 'ok') {
+        item.approvalOf[license(drug)] = ranges.some((r) => matchesCrop(r, crop)) ? 'yes' : 'no';
+      } else if (status !== 'failed') {
+        item.approvalOf[license(drug)] = 'none';
+      }
       item.scanned += 1;
-      progress();
+      renderItemResultsOnly(item);
     }
   };
 
@@ -534,15 +549,21 @@ async function scanApprovals(item, crop) {
     Array.from({ length: Math.min(APPROVAL_SCAN_CONCURRENCY, candidates.length) }, worker),
   );
 
-  // 已核准的排前面，其餘維持原本的相關度順序。
-  const ordered = item.results
-    .map((drug, i) => ({ drug, approval: item.approvals[i], i }))
-    .sort((a, b) => approvalRank(a.approval) - approvalRank(b.approval) || a.i - b.i);
+  // 已核准的排前面；同樣核准時，有效的排在過期與撤銷的前面。
+  // 把一張 2017 年就到期的許可證推到第一名，等於在推薦一個買不到也不該用的東西。
+  item.results = item.results
+    .map((drug, i) => ({
+      drug,
+      approval: approvalRank(item.approvalOf[license(drug)]),
+      status: statusRank(drug),
+      i,
+    }))
+    .sort((a, b) => a.approval - b.approval || a.status - b.status || a.i - b.i)
+    .map((o) => o.drug);
 
-  item.results = ordered.map((o) => o.drug);
-  item.approvals = ordered.map((o) => o.approval);
   item.scanning = false;
-  render();
+  refreshVisible(item);
+  renderItemResultsOnly(item);
 }
 
 async function runItemSearch(item) {
@@ -554,13 +575,19 @@ async function runItemSearch(item) {
 
   item.loading = true;
   item.error = '';
-  item.approvals = null;
+  item.filter = '';
+  item.approvalOf = {};
+  item.scanTotal = 0;
   render();
 
   try {
-    const { rows, fromCache } = await searchWithFallback(item.query);
+    const { rows, capped, fromCache } = await searchWithFallback(item.query);
     item.results = rows;
-    if (fromCache) item.error = '目前連不上官方資料，以下是本機保存的藥劑。';
+    refreshVisible(item);
+    const notes = [];
+    if (fromCache) notes.push('目前連不上官方資料，以下是本機保存的藥劑。');
+    if (capped) notes.push('官方單次只給這麼多筆，可能還有沒列出來的產品；直接用廠牌名稱查會更準。');
+    item.error = notes.join('');
     item.loading = false;
     render();
     await scanApprovals(item, state.calc.crop.trim());
@@ -574,7 +601,7 @@ async function runItemSearch(item) {
 async function pickItemDrug(item, drug) {
   item.drug = drug;
   item.results = [];
-  item.approvals = null;
+  item.visible = [];
   item.loading = true;
   item.error = '';
   render();
@@ -1021,10 +1048,22 @@ const ACTIONS = {
   'item-search': (d) => runItemSearch(findItem(d.id)),
   'item-pick': (d) => {
     const item = findItem(d.id);
-    pickItemDrug(item, item.results[Number(d.idx)]);
+    const drug = item.results.find((x) => license(x) === d.key);
+    if (drug) pickItemDrug(item, drug);
   },
   'item-reset': (d) => {
-    Object.assign(findItem(d.id), { drug: null, ranges: [], query: '', error: '', selected: 0 });
+    Object.assign(findItem(d.id), {
+      drug: null,
+      ranges: [],
+      query: '',
+      filter: '',
+      results: [],
+      visible: [],
+      approvalOf: {},
+      scanTotal: 0,
+      error: '',
+      selected: 0,
+    });
     render();
   },
 
@@ -1173,6 +1212,13 @@ document.addEventListener('input', (event) => {
     case 'item-query':
       findItem(id).query = value;
       break;
+    case 'item-filter': {
+      const item = findItem(id);
+      item.filter = value;
+      refreshVisible(item);
+      renderItemResultsOnly(item);
+      break;
+    }
     case 'detail-crop':
       state.overlay.crop = value;
       renderDetailRangesOnly();
