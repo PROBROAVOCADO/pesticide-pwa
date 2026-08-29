@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { drugCardHtml, esc, highlight, recordFormHtml, recordGuidanceHtml, settingsViewHtml } from './views.js';
+import { drugCardHtml, esc, highlight, recordFormHtml, recordGuidanceHtml, searchResultsHtml, settingsViewHtml } from './views.js';
 
 describe('highlight：標出搜尋字串', () => {
   it('標出中間的片段', () => {
@@ -143,7 +143,7 @@ describe('drugCardHtml：過期與撤銷要標出來', () => {
 
 describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
   const html = settingsViewHtml({
-    version: 'v1.4.4',
+    version: 'v1.4.5',
     aphiaUrl: 'https://example.com/aphia',
     lineUrl: 'https://example.com/line',
     fieldCount: 2,
@@ -170,6 +170,31 @@ describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
 
   it('設定頁不再用彈窗按鈕打開版本與支持內容', () => {
     assert.ok(!html.includes('data-action="modal"'));
+  });
+
+  it('版本摘要只顯示最新三個版本', () => {
+    assert.deepEqual(html.match(/<b>v\d+\.\d+\.\d+(?:・這一版)?<\/b>/g), [
+      '<b>v1.4.5・這一版</b>',
+      '<b>v1.4.4</b>',
+      '<b>v1.4.3</b>',
+    ]);
+    assert.ok(!html.includes('v1.4.2'));
+  });
+});
+
+describe('searchResultsHtml：核准比對途中可先顯示已找到的卡片', () => {
+  it('loading 尚未結束，只要有結果就先畫出來', () => {
+    const html = searchResultsHtml({
+      drugs: [銅右滅達樂],
+      loading: true,
+      allApproved: true,
+      total: 1,
+      matched: 1,
+      shownLimit: 120,
+      keyword: '滅達',
+    });
+    assert.ok(html.includes('<strong>金手指</strong>'));
+    assert.ok(html.includes('✅ 已核准'));
   });
 });
 
@@ -229,5 +254,22 @@ describe('recordGuidanceHtml：面積用量是主建議，實際數字另行檢�
     const html = recordFormHtml(recordDraft);
     assert.ok(html.includes('data-record-guidance="0"'));
     assert.ok(html.includes('data-field="record-amount" data-idx="0" value=""'));
+  });
+
+  it('添加物單位使用常用下拉選單，舊的自訂單位也不會消失', () => {
+    const html = recordFormHtml({
+      ...recordDraft,
+      additives: [{ name: '自製菌液', amount: '2', unit: '桶', note: '' }],
+    });
+    assert.ok(html.includes('data-field="additive-unit" data-idx="0"'));
+    assert.ok(html.includes('<option value="毫升">毫升</option>'));
+    assert.ok(html.includes('<option value="桶" selected>桶</option>'));
+  });
+
+  it('過去保存過的添加物可以從常用清單快速加入', () => {
+    const html = recordFormHtml(recordDraft, [{ name: '自製菌液', unit: '公升' }]);
+    assert.ok(html.includes('data-field="additive-preset"'));
+    assert.ok(html.includes('自製菌液・公升'));
+    assert.ok(html.includes('實際用量不會沿用'));
   });
 });

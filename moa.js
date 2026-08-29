@@ -105,13 +105,15 @@ export async function scanDrugsByCrop(
   drugs,
   crop,
   loader,
-  { concurrency = 8, onProgress = () => {} } = {},
+  { concurrency = 8, onProgress = () => {}, onMatch = () => {} } = {},
 ) {
   const candidates = Array.isArray(drugs) ? drugs : [];
   const hits = new Array(candidates.length).fill(null);
   let next = 0;
   let done = 0;
   let failed = 0;
+  let cached = 0;
+  let stale = 0;
 
   const worker = async () => {
     while (next < candidates.length) {
@@ -120,8 +122,11 @@ export async function scanDrugsByCrop(
         const result = await loader(candidates[i]);
         const ranges = Array.isArray(result) ? result : result?.ranges;
         if (result?.status === 'failed') failed += 1;
+        if (result?.stale) stale += 1;
+        else if (result?.fromCache) cached += 1;
         if (Array.isArray(ranges) && ranges.some((range) => matchesCrop(range, crop))) {
           hits[i] = candidates[i];
+          onMatch(candidates[i], i);
         }
       } catch {
         failed += 1;
@@ -139,6 +144,8 @@ export async function scanDrugsByCrop(
     matched: hits.filter(Boolean),
     scanned: candidates.length,
     failed,
+    cached,
+    stale,
   };
 }
 

@@ -73,6 +73,7 @@ describe('scanDrugsByCrop：完整比對藥名搜尋結果', () => {
       廠牌名稱: i === 71 ? '大卡稱' : `廠牌 ${i + 1}`,
     }));
     const progress = [];
+    const matches = [];
 
     const result = await scanDrugsByCrop(
       drugs,
@@ -80,13 +81,20 @@ describe('scanDrugsByCrop：完整比對藥名搜尋結果', () => {
       async (drug) => ({
         ranges: drug.廠牌名稱 === '大卡稱' ? [{ 作物名稱: '酪梨' }] : [{ 作物名稱: '水稻' }],
         status: 'ok',
+        fromCache: true,
       }),
-      { concurrency: 4, onProgress: (done, total) => progress.push([done, total]) },
+      {
+        concurrency: 4,
+        onProgress: (done, total) => progress.push([done, total]),
+        onMatch: (drug) => matches.push(drug.廠牌名稱),
+      },
     );
 
     assert.equal(result.scanned, 80);
     assert.equal(result.failed, 0);
+    assert.equal(result.cached, 80);
     assert.deepEqual(result.matched.map((d) => d.廠牌名稱), ['大卡稱']);
+    assert.deepEqual(matches, ['大卡稱']);
     assert.deepEqual(progress.at(-1), [80, 80]);
   });
 });

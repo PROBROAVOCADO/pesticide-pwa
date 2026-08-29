@@ -168,10 +168,17 @@ export function cacheDrugs(drugs) {
           for (const drug of drugs) {
             const key = `${String(drug['許可證字'] ?? '').trim()}${String(drug['許可證號'] ?? '').trim()}`;
             if (!key) continue;
-            // 只覆寫藥劑本身，保留先前抓過的使用範圍。
+            // 只覆寫藥劑本身，保留先前抓過的使用範圍與它自己的更新時間。
+            // 否則每次查藥名都會把舊範圍偽裝成「剛更新」，24 小時快取就不可信。
             const existing = store.get(key);
             existing.onsuccess = () => {
-              store.put({ key, drug, ranges: existing.result?.ranges ?? null, fetchedAt: Date.now() });
+              store.put({
+                ...existing.result,
+                key,
+                drug,
+                drugFetchedAt: Date.now(),
+                fetchedAt: existing.result?.fetchedAt ?? Date.now(),
+              });
             };
           }
           transaction.oncomplete = () => resolve();
@@ -181,16 +188,42 @@ export function cacheDrugs(drugs) {
     .catch(() => {});
 }
 
-export function cacheRanges(key, ranges) {
+export function cacheRanges(key, ranges, status = 'ok') {
   if (!key) return Promise.resolve();
+  const now = Date.now();
   return get(STORE.drugCache, key)
     .then((existing) =>
-      put(STORE.drugCache, { key, drug: existing?.drug ?? null, ranges, fetchedAt: Date.now() }),
+      put(STORE.drugCache, {
+        ...existing,
+        key,
+        drug: existing?.drug ?? null,
+        ranges: Array.isArray(ranges) ? ranges : [],
+        rangeStatus: status,
+        rangesFetchedAt: now,
+        fetchedAt: now,
+      }),
     )
     .catch(() => {});
 }
 
 export const getCached = (key) => get(STORE.drugCache, key).catch(() => null);
+
+/**
+ * 讀取仍在期限內的使用範圍快取。
+ * 舊版只有 fetchedAt、沒有 rangeStatus；只要當時確實存過非空範圍，就視為 ok。
+ */
+export function cachedRangesIfFresh(row, maxAgeMs, now = Date.now()) {
+  if (!row || !Array.isArray(row.ranges)) return null;
+  const status = row.rangeStatus || (row.ranges.length ? 'ok' : '');
+  if (!['ok', 'empty', 'no-link'].includes(status)) return null;
+
+  const savedAt = Number(row.rangesFetchedAt ?? row.fetchedAt);
+  const maxAge = Number(maxAgeMs);
+  if (!Number.isFinite(savedAt) || !Number.isFinite(maxAge) || maxAge < 0) return null;
+  if (Math.max(0, Number(now) - savedAt) > maxAge) return null;
+
+  return { ranges: row.ranges, status, fromCache: true, cachedAt: savedAt };
+}
 
 /** 所有快取的藥劑（含使用範圍），離線用作物查詢時要整份掃過。 */
 export const allCached = () => getAll(STORE.drugCache).catch(() => []);

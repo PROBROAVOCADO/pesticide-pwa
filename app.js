@@ -2,6 +2,7 @@ import { parseDose, toBaseDose, toHectares } from './calc.js';
 import {
   addFavorite,
   allCached,
+  cachedRangesIfFresh,
   cacheDrugs,
   cacheRanges,
   dbAvailable,
@@ -51,7 +52,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.4.4';
+const VERSION = 'v1.4.5';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -60,6 +61,9 @@ const SEARCH_DISPLAY_LIMIT = 120;
 
 /** 本機儲存的專屬前綴，避免與同帳號的其他 GitHub Pages 站台互相干擾。 */
 const APP_ID = 'field-meds';
+
+/** 搜尋比對先使用 24 小時內的本機範圍；真正點開或選用時仍向官方確認。 */
+const RANGE_CACHE_MAX_AGE = 24 * 60 * 60 * 1000;
 
 /* ------------------------------------------------------------------ */
 /* localStorage（只放輕量的偏好設定，資料本體在 IndexedDB）            */
@@ -227,7 +231,7 @@ function renderOverlay() {
   } else if (o.kind === 'field-form') {
     overlayEl.innerHTML = fieldFormHtml(o.form);
   } else if (o.kind === 'record-form') {
-    overlayEl.innerHTML = recordFormHtml(o.draft);
+    overlayEl.innerHTML = recordFormHtml(o.draft, recentAdditiveOptions());
   } else if (o.kind === 'record-detail') {
     const app = findApp(o.id);
     overlayEl.innerHTML = app ? recordDetailHtml(app, o.confirmDelete) : '';
@@ -341,15 +345,39 @@ async function searchWithFallback(query) {
  * 不再往外丟例外 —— 呼叫端需要的是狀態，不是錯誤：
  * 「這支藥沒登記用途」跟「我讀不到」對使用者是完全不同的兩件事。
  */
-async function rangesWithFallback(drug) {
+const officialRangeRequests = new Map();
+
+/** 同一張許可證同時只向官方請求一次，搜尋與點開明細不會重複排隊。 */
+function loadOfficialRangesOnce(drug, key) {
+  const requestKey = key || text(drug['農藥使用範圍']);
+  if (requestKey && officialRangeRequests.has(requestKey)) return officialRangeRequests.get(requestKey);
+
+  const request = loadRanges(drug)
+    .then(({ ranges, status }) => {
+      if (key) cacheRanges(key, ranges, status);
+      return { ranges, status, fromCache: false };
+    })
+    .finally(() => {
+      if (requestKey) officialRangeRequests.delete(requestKey);
+    });
+
+  if (requestKey) officialRangeRequests.set(requestKey, request);
+  return request;
+}
+
+async function rangesWithFallback(drug, { forceNetwork = false } = {}) {
   const key = license(drug);
+  const cached = key ? await getCached(key) : null;
+
+  if (!forceNetwork) {
+    const fresh = cachedRangesIfFresh(cached, RANGE_CACHE_MAX_AGE);
+    if (fresh) return fresh;
+  }
+
   try {
-    const { ranges, status } = await loadRanges(drug);
-    if (status === 'ok') cacheRanges(key, ranges);
-    return { ranges, status };
+    return await loadOfficialRangesOnce(drug, key);
   } catch {
-    const cached = await getCached(key);
-    if (cached?.ranges?.length) return { ranges: cached.ranges, status: 'ok' };
+    if (cached?.ranges?.length) return { ranges: cached.ranges, status: 'ok', fromCache: true, stale: true };
     return { ranges: [], status: 'failed' };
   }
 }
@@ -429,15 +457,31 @@ async function runMainSearch() {
       state.search.message = `找到 ${rows.length} 筆，正在逐一比對「${crop}」…`;
       render();
 
-      const { matched, scanned, failed } = await scanDrugsByCrop(
+      const progressive = new Map();
+      let revealTimer = null;
+      const revealMatches = () => {
+        state.search.drugs = [...progressive.values()]
+          .sort((a, b) => a.index - b.index)
+          .map((entry) => entry.drug);
+        renderSearchResultsOnly();
+        revealTimer = null;
+      };
+
+      const { matched, scanned, failed, cached, stale } = await scanDrugsByCrop(
         rows,
         crop,
         rangesWithFallback,
         {
-          concurrency: 8,
+          concurrency: 10,
           onProgress: (n, total) => setSearchProgress(`正在完整比對「${crop}」…（${n}／${total}）`),
+          onMatch: (drug, index) => {
+            progressive.set(license(drug), { drug, index });
+            if (!revealTimer) revealTimer = setTimeout(revealMatches, 120);
+          },
         },
       );
+
+      if (revealTimer) clearTimeout(revealTimer);
 
       state.search.drugs = matched;
       state.search.message = matched.length
@@ -445,6 +489,8 @@ async function runMainSearch() {
         : `完整比對的 ${scanned} 筆藥劑都沒有核准用於「${crop}」`;
 
       const notes = [];
+      if (cached) notes.push(`其中 ${cached} 筆使用 24 小時內的本機資料加速比對；點開明細或選用時會再向官方確認。`);
+      if (stale) notes.push(`另有 ${stale} 筆因官方暫時讀不到，使用較早保存的範圍；點開前請特別核對產品標示。`);
       if (fromCache) notes.push('目前連不上官方資料，以下是這台裝置查過的藥劑。');
       if (failed) {
         notes.push(
@@ -465,7 +511,7 @@ async function runMainSearch() {
 async function openDetail(drug) {
   state.overlay = { kind: 'detail', drug, ranges: [], loading: true, crop: '' };
   renderOverlay();
-  const { ranges, status } = await rangesWithFallback(drug);
+  const { ranges, status } = await rangesWithFallback(drug, { forceNetwork: true });
   if (state.overlay?.kind === 'detail') {
     state.overlay.ranges = ranges;
     state.overlay.rangeStatus = status;
@@ -476,7 +522,7 @@ async function openDetail(drug) {
 
 /** 一次掃幾支藥來判斷有沒有核准用於目前作物。每一支都是一次網路請求。 */
 const APPROVAL_SCAN_LIMIT = 40;
-const APPROVAL_SCAN_CONCURRENCY = 6;
+const APPROVAL_SCAN_CONCURRENCY = 8;
 
 const approvalRank = (a) => (a === 'yes' ? 0 : a === undefined ? 1 : a === 'no' ? 2 : 3);
 
@@ -525,7 +571,8 @@ async function scanApprovals(item, crop) {
         item.approvalOf[license(drug)] = 'none';
       }
       item.scanned += 1;
-      renderItemResultsOnly(item);
+      // 快取命中時可能一瞬間完成很多筆；每四筆重畫一次，避免手機反覆重建整份清單。
+      if (item.scanned % 4 === 0 || item.scanned === item.scanTotal) renderItemResultsOnly(item);
     }
   };
 
@@ -590,7 +637,7 @@ async function pickItemDrug(item, drug) {
   item.error = '';
   render();
 
-  const { ranges, status } = await rangesWithFallback(drug);
+  const { ranges, status } = await rangesWithFallback(drug, { forceNetwork: true });
   const matched = ranges.filter((r) => matchesCrop(r, state.calc.crop));
 
   // 沒對上作物時仍然列出全部用途，並標記起來讓畫面說明狀況。
@@ -608,6 +655,7 @@ async function pickItemDrug(item, drug) {
 
 /** 「最近用過」最多列幾支。釘選的沒有上限，因為那是使用者自己挑的。 */
 const RECENT_DRUG_LIMIT = 10;
+const RECENT_ADDITIVE_LIMIT = 12;
 
 /**
  * 下拉選單的內容：手動釘選的排上面，施作紀錄自動累積的「最近用過」排下面。
@@ -628,6 +676,20 @@ function favoriteOptions() {
   }
 
   return { pinned, recent: [...seen.values()].slice(0, RECENT_DRUG_LIMIT) };
+}
+
+/** 過去真正保存過的添加物才列為常用；只帶名稱與單位，不沿用上次用量。 */
+function recentAdditiveOptions() {
+  const seen = new Map();
+  for (const app of state.applications) {
+    for (const additive of app.additives || []) {
+      const name = String(additive.name || '').trim();
+      const key = name.replace(/\s+/g, '').toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.set(key, { name, unit: String(additive.unit || '').trim() });
+    }
+  }
+  return [...seen.values()].slice(0, RECENT_ADDITIVE_LIMIT);
 }
 
 async function pickFavorite(item, key) {
@@ -1275,6 +1337,14 @@ document.addEventListener('change', (event) => {
   } else if (field === 'record-amount-unit') {
     draft.drugs[Number(idx)].amountUnit = value;
     renderRecordGuidanceOnly();
+  } else if (field === 'additive-preset') {
+    const preset = recentAdditiveOptions()[Number(value)];
+    if (preset) {
+      draft.additives.push({ name: preset.name, amount: '', unit: preset.unit, note: '' });
+      renderOverlay();
+    }
+  } else if (field === 'additive-unit') {
+    draft.additives[Number(idx)].unit = value;
   } else if (field === 'record-date') {
     // 日期變了，參考採收日要跟著重算。
     draft.date = value;

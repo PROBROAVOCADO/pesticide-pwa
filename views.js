@@ -183,13 +183,13 @@ export function searchResultsHtml({ drugs, loading, allApproved, total, matched,
       ? `<p class="offline-note">符合的有 ${matched} 筆，畫面只列前 ${shownLimit} 筆。用上面的篩選欄再縮小範圍，就看得到其餘的。</p>`
       : '';
 
-  return loading
-    ? ''
-    : drugs.length
-      ? `${trimmed}
+  return drugs.length
+    ? `${trimmed}
          <div class="drug-grid">${drugs
            .map((d) => drugCardHtml(d, 'open-detail', `data-license="${esc(license(d))}"`, false, allApproved ? 'yes' : undefined, keyword))
            .join('')}</div>`
+    : loading
+      ? ''
       : total
         ? `<div class="welcome-card">
              <b>🔍 這 ${total} 筆裡沒有符合的</b>
@@ -711,7 +711,14 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.4.4・這一版</b>
+      <b>v1.4.5・這一版</b>
+      <ul>
+        <li>搜尋核准作物時會使用 24 小時內的本機資料加速，核准結果也會分批提早顯示。</li>
+        <li>點開藥劑明細或正式加入試算時，仍會再向官方確認最新使用範圍。</li>
+        <li>施作紀錄新增常用添加物快速加入與常用單位下拉選單；設定頁只顯示最新三版摘要。</li>
+      </ul>
+
+      <b>v1.4.4</b>
       <ul>
         <li>施作紀錄改以土地面積換算的標示用量作為主要建議，不再自動預填成實際用量。</li>
         <li>填入實際藥量與用水後，分開檢查總用藥量、濃度過高與稀釋過度，並顯示對應風險。</li>
@@ -722,42 +729,6 @@ function releaseLogHtml() {
       <ul>
         <li>修正手機點入搜尋或輸入欄位時，整個頁面被瀏覽器自動放大的問題。</li>
         <li>保留使用者手動雙指縮放，閱讀小字時仍可自行放大。</li>
-      </ul>
-
-      <b>v1.4.2</b>
-      <ul>
-        <li>設定頁的文字說明改成可展開、可收起的下拉區塊，畫面更精簡。</li>
-        <li>安裝到手機、土地管理、匯出備份與匯入備份仍維持直接操作按鈕。</li>
-      </ul>
-
-      <b>v1.4.1</b>
-      <ul>
-        <li>藥名搭配作物時會完整比對所有登記產品，不再只查前 24 筆。</li>
-        <li>手機上的藥劑卡片會自動換行並限制在畫面內，不再被長文字撐寬。</li>
-        <li>在結果內再篩選廠牌後，點卡片會開啟正確的藥劑明細。</li>
-      </ul>
-
-      <b>v1.4.0</b>
-      <ul>
-        <li>卡片同時顯示商品名與普通名，並把搜尋字串標成黃底 —— 打「滅達」找「銅右滅達樂」不會再漏掉。</li>
-        <li>許可證已到期或已撤銷會明確標出來，不再當成有效藥劑。</li>
-        <li>不再依分類過濾搜尋結果，除草劑、殺蟎劑照樣列出並標示。</li>
-        <li>試算頁的結果清單加上筆數、篩選欄與比對進度，核准比對從 12 支提高到 40 支。</li>
-      </ul>
-
-      <b>v1.3.1</b>
-      <ul>
-        <li>查詢一次抓更多筆，被官方截斷時會明講，並新增「在結果裡再找」的篩選欄。</li>
-        <li>電腦上底部分頁改成左側欄。</li>
-        <li>紀錄表單增刪添加物時不會再跳回頁首。</li>
-      </ul>
-
-      <b>v1.3.0</b>
-      <ul>
-        <li>搜尋結果會標出「已核准」並排在前面，也看得到廠商跟許可證號，同名藥劑不再分不清。</li>
-        <li>查不到核准範圍時會說明原因，而且照樣可以完成施作紀錄。</li>
-        <li>紀錄新增「其他添加物」，光合菌、展著劑這類自己配的也記得下來。</li>
-        <li>紀錄頁改顯示實際稀釋倍數，並列出每支藥各自的可採收日。</li>
       </ul>
     </div>`;
 }
@@ -1050,6 +1021,16 @@ const guidanceAlert = (tone, title, copy) => `
     <span>${esc(copy)}</span>
   </div>`;
 
+const ADDITIVE_UNITS = ['毫升', '公升', '公克', '公斤', '包', '瓶', '罐', '瓢', '匙', '其他'];
+
+const additiveUnitOptions = (current) => {
+  const value = String(current || '').trim();
+  const units = value && !ADDITIVE_UNITS.includes(value) ? [...ADDITIVE_UNITS, value] : ADDITIVE_UNITS;
+  return `<option value=""${value ? '' : ' selected'}>選擇單位</option>${units
+    .map((unit) => `<option value="${esc(unit)}"${unit === value ? ' selected' : ''}>${esc(unit)}</option>`)
+    .join('')}`;
+};
+
 /**
  * 本次施作的即時參考：面積用量是主建議，稀釋倍數是第二層檢查。
  * 這段可以單獨重畫，避免使用者輸入時游標被整張表單重建。
@@ -1125,7 +1106,19 @@ export function recordGuidanceHtml(draft, drug) {
   return `${reference}${prompt}${alerts.length ? `<div class="guidance-checks">${alerts.join('')}</div>` : ''}`;
 }
 
-export function recordFormHtml(draft) {
+export function recordFormHtml(draft, additivePresets = []) {
+  const additivePresetPicker = additivePresets.length
+    ? `<label class="field additive-preset">
+         <span>從常用添加物快速加入</span>
+         <select data-field="additive-preset">
+           <option value="" selected>選擇過去用過的添加物…</option>
+           ${additivePresets
+             .map((preset, index) => `<option value="${index}">${esc(preset.name)}${preset.unit ? `・${esc(preset.unit)}` : ''}</option>`)
+             .join('')}
+         </select>
+       </label>`
+    : '';
+
   const drugRows = draft.drugs
     .map(
       (d, i) => `
@@ -1187,7 +1180,9 @@ export function recordFormHtml(draft) {
           </label>
           <label class="field">
             <span>單位</span>
-            <input data-field="additive-unit" data-idx="${i}" value="${esc(a.unit)}" placeholder="公升／公斤／瓢" />
+            <select data-field="additive-unit" data-idx="${i}">
+              ${additiveUnitOptions(a.unit)}
+            </select>
           </label>
         </div>
         <label class="field">
@@ -1274,8 +1269,10 @@ export function recordFormHtml(draft) {
       <div class="section-row"><h3>🧪 其他添加物</h3><span>${draft.additives.length} 項</span></div>
       <p class="legal-note">微生物肥料、光合菌、展著劑這類不在農藥登記資料裡的東西，記在這裡。
       它們沒有官方的安全採收期，所以不會列入採收日推算。</p>
+      ${additivePresetPicker}
       ${additiveRows}
       <button class="add-drug" type="button" data-action="additive-add"><span>＋</span>加一項添加物</button>
+      <p class="legal-note">保存後，添加物名稱與單位會出現在下次的常用清單；實際用量不會沿用。常用清單只是快速填寫，不代表適合與農藥混用。</p>
 
       <label class="field">
         <span>備註</span>

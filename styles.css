@@ -267,6 +267,7 @@ mark{background:#fff0b8;color:var(--ink);border-radius:3px;padding:0 1px;font-we
 .setting-disclosure>summary{list-style:none;margin-bottom:0}
 .setting-disclosure>summary::-webkit-details-marker{display:none}
 .setting-disclosure>summary i{transition:transform .18s ease}
+.setting-row>i{flex:0 0 32px;width:32px;height:32px;margin-left:auto;display:grid;place-items:center;align-self:center;line-height:1;text-align:center}
 .setting-disclosure[open]>summary{
   border-radius:17px 17px 0 0;
   border-bottom-color:transparent;
