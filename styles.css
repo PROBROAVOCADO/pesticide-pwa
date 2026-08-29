@@ -291,6 +291,16 @@ mark{background:#fff0b8;color:var(--ink);border-radius:3px;padding:0 1px;font-we
 .setting-panel>a:not(.modal-action){display:inline-flex;min-height:44px;align-items:center;color:var(--herb);font-weight:700}
 .setting-panel .release-log{max-height:none}
 
+/* 品牌署名：沿用既有紙色、墨綠與土棕色票 */
+.colophon{margin:34px 4px 8px;padding:26px 16px 4px;border-top:1px solid var(--soft);text-align:center}
+.colophon-title{font-family:'Noto Serif TC','PMingLiU',serif;font-size:.82rem;font-weight:600;letter-spacing:4px;text-indent:4px;color:var(--ink);margin:0}
+.colophon-rule{position:relative;width:150px;height:1px;background:var(--rule);margin:14px auto 16px}
+.colophon-rule::before,.colophon-rule::after{content:"";position:absolute;top:50%;width:6px;height:6px;border-radius:50%;background:var(--brown);transform:translateY(-50%)}
+.colophon-rule::before{left:-3px}
+.colophon-rule::after{right:-3px}
+.colophon-line{font-size:.76rem;line-height:1.8;color:var(--muted);letter-spacing:.3px;margin:0;max-width:280px;margin-inline:auto}
+.colophon-meta{font-family:'Noto Serif TC','PMingLiU',serif;font-size:.7rem;letter-spacing:2px;color:var(--brown);margin:18px 0 0;font-variant-numeric:tabular-nums}
+
 /* iPhone Safari 會自動放大字級小於 16px 的表單欄位；維持 16px 可避免焦點縮放 */
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 input,select,textarea{font-family:inherit;font-size:16px;line-height:1.5}

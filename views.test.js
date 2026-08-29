@@ -143,7 +143,7 @@ describe('drugCardHtml：過期與撤銷要標出來', () => {
 
 describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
   const html = settingsViewHtml({
-    version: 'v1.4.5',
+    version: 'v1.4.6',
     aphiaUrl: 'https://example.com/aphia',
     lineUrl: 'https://example.com/line',
     fieldCount: 2,
@@ -174,11 +174,19 @@ describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
 
   it('版本摘要只顯示最新三個版本', () => {
     assert.deepEqual(html.match(/<b>v\d+\.\d+\.\d+(?:・這一版)?<\/b>/g), [
-      '<b>v1.4.5・這一版</b>',
+      '<b>v1.4.6・這一版</b>',
+      '<b>v1.4.5</b>',
       '<b>v1.4.4</b>',
-      '<b>v1.4.3</b>',
     ]);
-    assert.ok(!html.includes('v1.4.2'));
+    assert.ok(!html.includes('v1.4.3'));
+  });
+
+  it('在設定頁最下方顯示動態版本與年份的品牌署名', () => {
+    assert.equal((html.match(/class="colophon"/g) || []).length, 1);
+    assert.ok(html.includes('PRO-BRO AVOCADO'));
+    assert.ok(html.includes('A field tool for growers, built on a family avocado farm in Nantou, Taiwan.'));
+    assert.ok(html.includes(`v1.4.6 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
+    assert.ok(html.indexOf('買杯咖啡支持') < html.indexOf('class="colophon"'));
   });
 });
 

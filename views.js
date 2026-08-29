@@ -711,7 +711,12 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.4.5・這一版</b>
+      <b>v1.4.6・這一版</b>
+      <ul>
+        <li>設定頁底部加入 PRO-BRO AVOCADO 品牌署名，版本與年份會隨 App 自動更新。</li>
+      </ul>
+
+      <b>v1.4.5</b>
       <ul>
         <li>搜尋核准作物時會使用 24 小時內的本機資料加速，核准結果也會分批提早顯示。</li>
         <li>點開藥劑明細或正式加入試算時，仍會再向官方確認最新使用範圍。</li>
@@ -723,12 +728,6 @@ function releaseLogHtml() {
         <li>施作紀錄改以土地面積換算的標示用量作為主要建議，不再自動預填成實際用量。</li>
         <li>填入實際藥量與用水後，分開檢查總用藥量、濃度過高與稀釋過度，並顯示對應風險。</li>
         <li>只有稀釋倍數、沒有每公頃用量的資料，才會改用實際用水量反推參考藥量。</li>
-      </ul>
-
-      <b>v1.4.3</b>
-      <ul>
-        <li>修正手機點入搜尋或輸入欄位時，整個頁面被瀏覽器自動放大的問題。</li>
-        <li>保留使用者手動雙指縮放，閱讀小字時仍可自行放大。</li>
       </ul>
     </div>`;
 }
@@ -830,6 +829,13 @@ export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCo
         hint: '加 LINE 好友，給開發者一點鼓勵',
         content: supportHelpHtml(lineUrl),
       })}
+
+      <div class="colophon" aria-label="PRO-BRO AVOCADO 品牌署名">
+        <p class="colophon-title">PRO-BRO AVOCADO</p>
+        <div class="colophon-rule" aria-hidden="true"></div>
+        <p class="colophon-line">A field tool for growers, built on a family avocado farm in Nantou, Taiwan.</p>
+        <p class="colophon-meta">${esc(version)} &nbsp;·&nbsp; © ${new Date().getFullYear()}</p>
+      </div>
     </section>`;
 }
 
