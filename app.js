@@ -32,6 +32,7 @@ import {
 import {
   calcViewHtml,
   conversionText,
+  customDilutionHtml,
   detailHtml,
   fieldFormHtml,
   fieldsSheetHtml,
@@ -52,7 +53,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.4.8';
+const VERSION = 'v1.4.9';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -231,7 +232,7 @@ function renderOverlay() {
   } else if (o.kind === 'field-form') {
     overlayEl.innerHTML = fieldFormHtml(o.form);
   } else if (o.kind === 'record-form') {
-    overlayEl.innerHTML = recordFormHtml(o.draft, recentAdditiveOptions());
+    overlayEl.innerHTML = recordFormHtml(o.draft, recentAdditiveOptions(), state.fields);
   } else if (o.kind === 'record-detail') {
     const app = findApp(o.id);
     overlayEl.innerHTML = app ? recordDetailHtml(app, o.confirmDelete) : '';
@@ -265,6 +266,19 @@ function renderRecordGuidanceOnly() {
   draft.drugs.forEach((drug, index) => {
     const holder = overlayEl.querySelector(`[data-record-guidance="${index}"]`);
     if (holder) holder.innerHTML = recordGuidanceHtml(draft, drug);
+  });
+}
+
+/** 自訂配方輸入時只更新實際稀釋資訊，避免整張表單重畫而中斷打字。 */
+function renderCustomDilutionsOnly() {
+  if (state.overlay?.kind !== 'record-form') return;
+  const { draft } = state.overlay;
+  const customOnly = draft.recordType === 'custom' || !(draft.drugs || []).length;
+  if (!customOnly) return;
+
+  (draft.additives || []).forEach((additive, index) => {
+    const holder = overlayEl.querySelector(`[data-custom-dilution="${index}"]`);
+    if (holder) holder.innerHTML = customDilutionHtml(draft, additive);
   });
 }
 
@@ -669,7 +683,7 @@ function favoriteOptions() {
   const seen = new Map();
   // state.applications 已經是日期新到舊，所以第一次遇到的就是最近一次。
   for (const app of state.applications) {
-    for (const drug of app.drugs) {
+    for (const drug of app.drugs || []) {
       if (!drug.license || pinnedKeys.has(drug.license) || seen.has(drug.license)) continue;
       seen.set(drug.license, { key: drug.license, name: drug.name || drug.license });
     }
@@ -829,6 +843,7 @@ function openRecordForm() {
 
   const now = new Date();
   const draft = {
+    recordType: 'official',
     id: null,
     date: todayKey(),
     time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
@@ -850,10 +865,41 @@ function openRecordForm() {
   renderOverlay();
 }
 
+const emptyAdditive = () => ({ name: '', amount: '', unit: '', note: '' });
+
+/** 不需要先選官方藥劑，直接從施作紀錄頁建立自訂配方／資材紀錄。 */
+function openCustomRecordForm() {
+  const preferredFieldId = state.records.filterFieldId || (state.fields.length === 1 ? state.fields[0].id : '');
+  const field = state.fields.find((item) => item.id === preferredFieldId);
+  const now = new Date();
+  const draft = {
+    id: null,
+    recordType: 'custom',
+    date: todayKey(),
+    time: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
+    fieldId: field?.id || '',
+    fieldName: field?.name || '',
+    crop: field?.crop || '',
+    area: field?.area || '1',
+    unit: field?.unit || 'fen',
+    mode: 'tank',
+    water: '',
+    drugs: [],
+    additives: [emptyAdditive()],
+    note: '',
+    error: '',
+  };
+
+  recomputeHarvest(draft);
+  state.overlay = { kind: 'record-form', draft };
+  renderOverlay();
+}
+
 function openRecordFormForEdit(app) {
   const draft = {
     ...app,
-    drugs: app.drugs.map((d) => ({ ...d })),
+    recordType: app.recordType || (app.drugs?.length ? 'official' : 'custom'),
+    drugs: (app.drugs || []).map((d) => ({ ...d })),
     additives: (app.additives || []).map((a) => ({ ...a })),
     error: '',
   };
@@ -864,6 +910,8 @@ function openRecordFormForEdit(app) {
 
 async function saveRecord() {
   const draft = state.overlay.draft;
+  const customOnly = draft.recordType === 'custom' || !draft.drugs.length;
+  const namedAdditives = (draft.additives || []).filter((item) => String(item.name || '').trim());
 
   if (!draft.date) {
     draft.error = '請選施作日期';
@@ -872,6 +920,21 @@ async function saveRecord() {
   }
   if (!draft.fieldName.trim()) {
     draft.error = '請填土地名稱，之後查紀錄才找得到';
+    renderOverlay();
+    return;
+  }
+  if (!(Number(draft.area) > 0)) {
+    draft.error = '請填實際施作面積';
+    renderOverlay();
+    return;
+  }
+  if (customOnly && !namedAdditives.length) {
+    draft.error = '請至少填一項自訂配方或資材名稱';
+    renderOverlay();
+    return;
+  }
+  if (customOnly && namedAdditives.some((item) => !(Number(item.amount) > 0) || !String(item.unit || '').trim())) {
+    draft.error = '每一項自訂配方或資材都要填實際用量與單位';
     renderOverlay();
     return;
   }
@@ -896,6 +959,7 @@ async function saveRecord() {
   const record = {
     id: draft.id || undefined,
     createdAt: draft.createdAt,
+    recordType: customOnly ? 'custom' : 'official',
     date: draft.date,
     time: draft.time,
     fieldId: draft.fieldId,
@@ -919,8 +983,7 @@ async function saveRecord() {
       amountUnit: d.amountUnit,
       water: draft.mode === 'separate' ? Number(d.water) : null,
     })),
-    additives: draft.additives
-      .filter((a) => a.name.trim())
+    additives: namedAdditives
       .map((a) => ({
         name: a.name.trim(),
         amount: String(a.amount || '').trim(),
@@ -1119,6 +1182,7 @@ const ACTIONS = {
 
   /* 紀錄 */
   'open-record-form': () => openRecordForm(),
+  'open-custom-record-form': () => openCustomRecordForm(),
   'record-mode': (d) => {
     state.overlay.draft.mode = d.mode;
     renderOverlay();
@@ -1130,7 +1194,7 @@ const ACTIONS = {
     renderOverlay();
   },
   'additive-add': () => {
-    state.overlay.draft.additives.push({ name: '', amount: '', unit: '', note: '' });
+    state.overlay.draft.additives.push(emptyAdditive());
     renderOverlay();
   },
   'additive-remove': (d) => {
@@ -1281,6 +1345,7 @@ document.addEventListener('input', (event) => {
     case 'record-water':
       draft.water = value;
       renderRecordGuidanceOnly();
+      renderCustomDilutionsOnly();
       break;
     case 'record-note':
       draft.note = value;
@@ -1301,9 +1366,11 @@ document.addEventListener('input', (event) => {
       break;
     case 'additive-amount':
       draft.additives[Number(idx)].amount = value;
+      renderCustomDilutionsOnly();
       break;
     case 'additive-unit':
       draft.additives[Number(idx)].unit = value;
+      renderCustomDilutionsOnly();
       break;
     case 'additive-note':
       draft.additives[Number(idx)].note = value;
@@ -1334,17 +1401,33 @@ document.addEventListener('change', (event) => {
   } else if (field === 'record-unit') {
     draft.unit = value;
     renderRecordGuidanceOnly();
+  } else if (field === 'record-field-preset') {
+    const fieldRecord = state.fields.find((item) => item.id === value);
+    draft.fieldId = value;
+    if (fieldRecord) {
+      draft.fieldName = fieldRecord.name;
+      draft.area = fieldRecord.area;
+      draft.unit = fieldRecord.unit;
+      if (fieldRecord.crop) draft.crop = fieldRecord.crop;
+    }
+    renderOverlay();
   } else if (field === 'record-amount-unit') {
     draft.drugs[Number(idx)].amountUnit = value;
     renderRecordGuidanceOnly();
   } else if (field === 'additive-preset') {
     const preset = recentAdditiveOptions()[Number(value)];
     if (preset) {
-      draft.additives.push({ name: preset.name, amount: '', unit: preset.unit, note: '' });
+      const emptyIndex = draft.additives.findIndex(
+        (item) => !String(item.name || '').trim() && !String(item.amount || '').trim() && !String(item.note || '').trim(),
+      );
+      const next = { name: preset.name, amount: '', unit: preset.unit, note: '' };
+      if (emptyIndex >= 0) draft.additives[emptyIndex] = next;
+      else draft.additives.push(next);
       renderOverlay();
     }
   } else if (field === 'additive-unit') {
     draft.additives[Number(idx)].unit = value;
+    renderCustomDilutionsOnly();
   } else if (field === 'record-date') {
     // 日期變了，參考採收日要跟著重算。
     draft.date = value;

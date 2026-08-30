@@ -40,6 +40,7 @@
 
 /* 主要按鈕 */
 .record-cta{width:100%;min-height:56px;margin:16px 0 6px;border:0;border-radius:999px;background:var(--herb);color:var(--paper);font-weight:700;font-size:16px;letter-spacing:1px}
+.custom-record-cta{margin-top:0;background:var(--brown)}
 .record-cta:disabled{background:var(--sunken);color:var(--muted);border:1px solid var(--rule)}
 .ghost-btn{width:100%;min-height:52px;margin-bottom:8px;border:1px solid var(--rule);border-radius:999px;background:var(--paper);color:var(--brown);font-weight:700}
 .ghost-btn.danger{color:var(--brick);border-color:rgba(156,69,53,.35)}

@@ -141,6 +141,10 @@ const AREA_UNIT_LABEL = { fen: '分', jia: '甲', m2: '平方公尺', ha: '公�
 
 export const areaLabel = (app) => `${app.area} ${AREA_UNIT_LABEL[app.unit] || ''}`.trim();
 
+/** 新版會明記 recordType；舊備份若沒有這個欄位，仍可由內容安全判斷。 */
+export const isCustomRecord = (app) =>
+  app?.recordType === 'custom' || (!(app?.drugs?.length) && Boolean(app?.additives?.length));
+
 const amountLabel = (value, unit) => [value, unit].filter((part) => String(part ?? '').trim()).join(' ') || '未填寫';
 
 /** 將官方常見的「2000」「1,500倍」「1500-2000倍」整理成容易讀的格式。 */
@@ -163,6 +167,9 @@ const periodLabel = (raw) => {
 
 /** 一次施作的完整文字，貼到手機行事曆的備註欄剛好。 */
 export function buildRecordText(app) {
+  const drugs = app.drugs || [];
+  const additives = app.additives || [];
+  const customOnly = isCustomRecord(app);
   const lines = [
     '【🌿 田間用藥・施作紀錄】',
     `📅 日期：${formatSlashDate(app.date)}${app.time ? ` ${app.time}` : ''}`,
@@ -174,37 +181,55 @@ export function buildRecordText(app) {
 
   if (app.mode === 'tank') lines.push(`實際用水：${app.water} 公升`);
 
-  lines.push('', '💊 本次用藥：');
+  if (drugs.length) {
+    lines.push('', '💊 本次用藥：');
 
-  (app.drugs || []).forEach((drug, i) => {
-    const water = app.mode === 'separate' ? drug.water : app.water;
-    const actual = actualDilution(drug.amount, drug.amountUnit, water);
+    drugs.forEach((drug, i) => {
+      const water = app.mode === 'separate' ? drug.water : app.water;
+      const actual = actualDilution(drug.amount, drug.amountUnit, water);
 
-    // 藥名獨立一列，避免與長藥名、用量和單位擠在一起。
-    lines.push(`${i + 1}. ${drug.name || '未命名藥劑'}`);
-    lines.push(`   本次使用量：${amountLabel(drug.amount, drug.amountUnit)}`);
-    if (drug.target) lines.push(`   防治對象：${drug.target}`);
-    if (app.mode === 'separate') lines.push(`   本次用水：${drug.water ? `${drug.water} 公升` : '未填寫'}`);
-    lines.push(`   建議稀釋：${recommendedDilutionLabel(drug.dilution)}`);
-    lines.push(`   實際稀釋：${actual ? `約 ${actual.toLocaleString('en-US')} 倍` : '無法計算'}`);
-    lines.push(`   安全採收期：${periodLabel(drug.phi)}`);
-    lines.push(`   施藥間隔：${periodLabel(drug.interval)}`);
-  });
+      // 藥名獨立一列，避免與長藥名、用量和單位擠在一起。
+      lines.push(`${i + 1}. ${drug.name || '未命名藥劑'}`);
+      lines.push(`   本次使用量：${amountLabel(drug.amount, drug.amountUnit)}`);
+      if (drug.target) lines.push(`   防治對象：${drug.target}`);
+      if (app.mode === 'separate') lines.push(`   本次用水：${drug.water ? `${drug.water} 公升` : '未填寫'}`);
+      lines.push(`   建議稀釋：${recommendedDilutionLabel(drug.dilution)}`);
+      lines.push(`   實際稀釋：${actual ? `約 ${actual.toLocaleString('en-US')} 倍` : '無法計算'}`);
+      lines.push(`   安全採收期：${periodLabel(drug.phi)}`);
+      lines.push(`   施藥間隔：${periodLabel(drug.interval)}`);
+    });
+  }
 
   // 自製或市售的微生物肥料、展著劑等，不在農藥登記資料裡，但同一桶下去了就該記下來。
-  if (app.additives?.length) {
-    lines.push('', '🧴 同時添加：');
-    app.additives.forEach((a, i) => {
-      const amount = [a.amount, a.unit].filter(Boolean).join(' ');
-      lines.push(`${i + 1}. ${a.name}${amount ? ` ${amount}` : ''}`);
-      if (a.note) lines.push(`   ${a.note}`);
+  if (additives.length) {
+    lines.push('', customOnly ? '🧴 自訂配方／資材：' : '🧴 同時添加：');
+    additives.forEach((a, i) => {
+      if (customOnly) {
+        const actual = actualDilution(a.amount, a.unit, app.water);
+        lines.push(`${i + 1}. ${a.name || '未命名項目'}`);
+        lines.push(`   本次使用量：${amountLabel(a.amount, a.unit)}`);
+        lines.push('   建議稀釋：無官方資料');
+        lines.push(`   實際稀釋：${actual ? `約 ${actual.toLocaleString('en-US')} 倍` : '無法計算'}`);
+        if (a.note) lines.push(`   備註：${a.note}`);
+      } else {
+        const amount = [a.amount, a.unit].filter(Boolean).join(' ');
+        lines.push(`${i + 1}. ${a.name}${amount ? ` ${amount}` : ''}`);
+        if (a.note) lines.push(`   ${a.note}`);
+      }
     });
-    lines.push('⚠️ 非農藥登記品項，不列入安全採收期推算。');
+    lines.push(
+      customOnly
+        ? '⚠️ 自訂配方／資材未經農業部登記資料比對，不提供官方建議稀釋或安全採收期。'
+        : '⚠️ 非農藥登記品項，不列入安全採收期推算。',
+    );
   }
 
   if (app.note) lines.push('', `📝 備註：${app.note}`);
 
-  if (app.harvestDate) {
+  if (customOnly) {
+    lines.push('', '🧺 安全採收提醒：無官方資料，無法推算');
+    lines.push('（若配方含農藥成分，請依各產品標示中最長的安全採收期）');
+  } else if (app.harvestDate) {
     lines.push('', `🧺 參考最早採收日：${formatSlashDate(app.harvestDate)}`);
     lines.push('（依本機施作紀錄推算，僅供參考）');
   } else {
@@ -216,7 +241,7 @@ export function buildRecordText(app) {
 
 /** 行事曆事件的標題。 */
 export const buildEventTitle = (app) =>
-  `施藥｜${app.fieldName || '未命名'}${app.crop ? `｜${app.crop}` : ''}`;
+  `${isCustomRecord(app) ? '自訂施作' : '施藥'}｜${app.fieldName || '未命名'}${app.crop ? `｜${app.crop}` : ''}`;
 
 /* ------------------------------------------------------------------ */
 /* 手機行事曆                                                          */

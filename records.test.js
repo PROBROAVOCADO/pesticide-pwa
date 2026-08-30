@@ -170,6 +170,23 @@ const SAMPLE = {
   ],
 };
 
+const CUSTOM_SAMPLE = {
+  id: 'custom-1',
+  recordType: 'custom',
+  date: '2026-08-29',
+  time: '10:00',
+  fieldName: '測試園',
+  crop: '酪梨',
+  area: '1',
+  unit: 'jia',
+  mode: 'tank',
+  water: 500,
+  note: '先做小區觀察',
+  harvestDate: null,
+  drugs: [],
+  additives: [{ name: '自製菌液', amount: '250', unit: '毫升', note: '葉面施用' }],
+};
+
 describe('buildRecordText：剪貼簿文字', () => {
   const textOut = buildRecordText(SAMPLE);
 
@@ -232,6 +249,28 @@ describe('buildRecordText：剪貼簿文字', () => {
     assert.ok(out.includes('施作方式：分開施用'));
     assert.ok(out.includes('用水：300 公升'));
     assert.ok(!out.includes('實際用水：520'));
+  });
+});
+
+describe('buildRecordText：只記錄自訂配方／資材', () => {
+  const textOut = buildRecordText(CUSTOM_SAMPLE);
+
+  it('不要求或虛構農業部藥劑，改列自訂配方區塊', () => {
+    assert.ok(textOut.includes('🧴 自訂配方／資材：'));
+    assert.ok(!textOut.includes('💊 本次用藥：'));
+    assert.ok(textOut.includes('1. 自製菌液\n   本次使用量：250 毫升'));
+  });
+
+  it('只呈現實際反推稀釋，官方建議明確標成沒有資料', () => {
+    assert.ok(textOut.includes('建議稀釋：無官方資料'));
+    assert.ok(textOut.includes('實際稀釋：約 2,000 倍'));
+    assert.ok(textOut.includes('安全採收提醒：無官方資料，無法推算'));
+  });
+
+  it('保留自訂項目備註與安全提醒', () => {
+    assert.ok(textOut.includes('備註：葉面施用'));
+    assert.ok(textOut.includes('未經農業部登記資料比對'));
+    assert.ok(textOut.includes('若配方含農藥成分'));
   });
 });
 
@@ -310,5 +349,21 @@ describe('googleCalendarUrl', () => {
     assert.ok(params.get('details').includes('後山酪梨園'));
     assert.ok(params.get('details').includes('建議稀釋：2,000 倍'));
     assert.ok(params.get('details').includes('實際稀釋：約 2,000 倍'));
+  });
+});
+
+describe('自訂配方的手機行事曆輸出', () => {
+  it('行事曆標題能與官方施藥紀錄分辨', () => {
+    const ics = buildIcs(CUSTOM_SAMPLE, new Date(Date.UTC(2026, 7, 29, 2, 0, 0)));
+    const params = new URL(googleCalendarUrl(CUSTOM_SAMPLE)).searchParams;
+    assert.ok(ics.includes('SUMMARY:自訂施作｜測試園｜酪梨'));
+    assert.equal(params.get('text'), '自訂施作｜測試園｜酪梨');
+  });
+
+  it('行事曆備註同步包含實際稀釋與安全提醒', () => {
+    const details = new URL(googleCalendarUrl(CUSTOM_SAMPLE)).searchParams.get('details');
+    assert.ok(details.includes('自訂配方／資材'));
+    assert.ok(details.includes('實際稀釋：約 2,000 倍'));
+    assert.ok(details.includes('無官方資料，無法推算'));
   });
 });

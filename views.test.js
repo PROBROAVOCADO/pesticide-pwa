@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { drugCardHtml, esc, highlight, recordFormHtml, recordGuidanceHtml, searchResultsHtml, settingsViewHtml } from './views.js';
+import {
+  customDilutionHtml,
+  drugCardHtml,
+  esc,
+  highlight,
+  recordDetailHtml,
+  recordFormHtml,
+  recordGuidanceHtml,
+  recordsViewHtml,
+  searchResultsHtml,
+  settingsViewHtml,
+} from './views.js';
 
 describe('highlight：標出搜尋字串', () => {
   it('標出中間的片段', () => {
@@ -143,7 +154,7 @@ describe('drugCardHtml：過期與撤銷要標出來', () => {
 
 describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
   const html = settingsViewHtml({
-    version: 'v1.4.8',
+    version: 'v1.4.9',
     aphiaUrl: 'https://example.com/aphia',
     lineUrl: 'https://example.com/line',
     fieldCount: 2,
@@ -174,18 +185,18 @@ describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
 
   it('版本摘要只顯示最新三個版本', () => {
     assert.deepEqual(html.match(/<b>v\d+\.\d+\.\d+(?:・這一版)?<\/b>/g), [
-      '<b>v1.4.8・這一版</b>',
+      '<b>v1.4.9・這一版</b>',
+      '<b>v1.4.8</b>',
       '<b>v1.4.7</b>',
-      '<b>v1.4.6</b>',
     ]);
-    assert.ok(!html.includes('v1.4.5'));
+    assert.ok(!html.includes('v1.4.6'));
   });
 
   it('在設定頁最下方顯示動態版本與年份的品牌署名', () => {
     assert.equal((html.match(/class="colophon"/g) || []).length, 1);
     assert.ok(html.includes('PRO-BRO AVOCADO'));
     assert.ok(html.includes('A field tool for growers, built on a family avocado farm in Nantou, Taiwan.'));
-    assert.ok(html.includes(`v1.4.8 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
+    assert.ok(html.includes(`v1.4.9 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
     assert.ok(html.indexOf('買杯咖啡支持') < html.indexOf('class="colophon"'));
   });
 });
@@ -234,6 +245,27 @@ const recordDraft = {
   }],
 };
 
+const customDraft = {
+  id: null,
+  recordType: 'custom',
+  date: '2026-08-29',
+  time: '10:00',
+  fieldId: 'field-1',
+  fieldName: '測試園',
+  crop: '酪梨',
+  area: 1,
+  unit: 'jia',
+  mode: 'tank',
+  water: 500,
+  drugs: [],
+  additives: [{ name: '自製菌液', amount: '250', unit: '毫升', note: '葉面施用' }],
+  harvestDate: null,
+  harvestDays: null,
+  harvestUnknown: true,
+  note: '',
+  error: '',
+};
+
 describe('recordGuidanceHtml：面積用量是主建議，實際數字另行檢查', () => {
   it('先顯示半公頃換算的 250～500 毫升，空白實際用量不會被冒充成紀錄', () => {
     const html = recordGuidanceHtml(recordDraft, recordDraft.drugs[0]);
@@ -279,5 +311,48 @@ describe('recordGuidanceHtml：面積用量是主建議，實際數字另行檢�
     assert.ok(html.includes('data-field="additive-preset"'));
     assert.ok(html.includes('自製菌液・公升'));
     assert.ok(html.includes('實際用量不會沿用'));
+  });
+});
+
+describe('自訂配方／資材施作流程', () => {
+  it('施作紀錄首頁提供不必先選官方藥劑的入口', () => {
+    const html = recordsViewHtml({
+      month: new Date(2026, 7, 1),
+      applications: [],
+      selected: '',
+      pending: [],
+      filterFieldId: '',
+      fields: [],
+    });
+    assert.ok(html.includes('data-action="open-custom-record-form"'));
+    assert.ok(html.includes('完全沒有使用農業部藥劑'));
+  });
+
+  it('表單可從本機土地帶入，且不顯示官方藥劑區塊', () => {
+    const html = recordFormHtml(
+      customDraft,
+      [{ name: '自製菌液', unit: '毫升' }],
+      [{ id: 'field-1', name: '測試園', crop: '酪梨', area: 1, unit: 'jia' }],
+    );
+    assert.ok(html.includes('記錄自訂配方／資材'));
+    assert.ok(html.includes('data-field="record-field-preset"'));
+    assert.ok(html.includes('<option value="field-1" selected>測試園</option>'));
+    assert.ok(!html.includes('<h3>💊 本次用藥</h3>'));
+    assert.ok(html.includes('從常用配方／資材快速加入'));
+  });
+
+  it('依實際用量與總用水反推稀釋，不冒充官方建議', () => {
+    const html = customDilutionHtml(customDraft, customDraft.additives[0]);
+    assert.ok(html.includes('實際約 2,000 倍'));
+    assert.ok(html.includes('沒有農業部官方建議稀釋'));
+  });
+
+  it('明細會列出自訂項目、實際稀釋與無官方採收資料', () => {
+    const html = recordDetailHtml({ ...customDraft, id: 'custom-1' }, false);
+    assert.ok(html.includes('🧴 自訂配方／資材'));
+    assert.ok(html.includes('實際稀釋'));
+    assert.ok(html.includes('約 2,000 倍'));
+    assert.ok(html.includes('無官方資料，無法推算'));
+    assert.ok(!html.includes('<h3>💊 本次用藥</h3>'));
   });
 });
