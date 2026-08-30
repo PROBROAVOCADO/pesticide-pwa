@@ -52,7 +52,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.4.6';
+const VERSION = 'v1.4.8';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 

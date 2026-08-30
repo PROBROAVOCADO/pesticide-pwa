@@ -7,7 +7,7 @@
  *
  * 發版時記得把 CACHE 的版本號一起改，否則使用者會拿到舊檔案。
  */
-const CACHE = 'field-meds-pwa-v1.4.6-r1';
+const CACHE = 'field-meds-pwa-v1.4.8-r1';
 
 const CORE = [
   './',

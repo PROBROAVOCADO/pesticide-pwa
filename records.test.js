@@ -185,10 +185,32 @@ describe('buildRecordText：剪貼簿文字', () => {
     assert.ok(textOut.includes('實際用水：520 公升'));
   });
 
-  it('逐項列出每種藥的用量與防治對象', () => {
-    assert.ok(textOut.includes('1. ○○殺菌劑 260 毫升'));
-    assert.ok(textOut.includes('防治：炭疽病'));
-    assert.ok(textOut.includes('2. ○○殺蟲劑 175 公克'));
+  it('藥名獨立一列，再列出實際用量與防治對象', () => {
+    assert.ok(textOut.includes('1. ○○殺菌劑\n   本次使用量：260 毫升'));
+    assert.ok(textOut.includes('防治對象：炭疽病'));
+    assert.ok(textOut.includes('2. ○○殺蟲劑\n   本次使用量：175 公克'));
+  });
+
+  it('每種藥同時列出建議稀釋與依實際用量、用水反推的稀釋倍數', () => {
+    assert.ok(textOut.includes('建議稀釋：2,000 倍'));
+    assert.ok(textOut.includes('實際稀釋：約 2,000 倍'));
+    assert.ok(textOut.includes('建議稀釋：1,500 倍'));
+    assert.ok(textOut.includes('實際稀釋：約 2,971 倍'));
+  });
+
+  it('指定欄位移除圖示，日期、土地、作物與區塊圖示仍保留', () => {
+    for (const icon of ['📐', '🚜', '💧', '🎯', '📏', '🧪', '⏳', '🔁']) {
+      assert.ok(!textOut.includes(icon), `${icon} 不應出現在完整紀錄`);
+    }
+    assert.ok(textOut.includes('📅 日期：'));
+    assert.ok(textOut.includes('📍 土地：'));
+    assert.ok(textOut.includes('🌱 作物：'));
+    assert.ok(textOut.includes('💊 本次用藥：'));
+  });
+
+  it('官方只有「日」時改顯示未提供，不產生沒有數字的天數', () => {
+    const out = buildRecordText({ ...SAMPLE, drugs: [{ ...SAMPLE.drugs[0], interval: '日' }] });
+    assert.ok(out.includes('施藥間隔：未提供'));
   });
 
   it('附上參考最早採收日並註明是推算的', () => {
@@ -237,6 +259,8 @@ describe('buildIcs：手機行事曆檔案', () => {
     const description = unfolded.split('DESCRIPTION:')[1].split('\r\n')[0];
     assert.ok(description.includes('\\n'), '換行應該被轉成 \\n');
     assert.ok(description.includes('田間用藥・施作紀錄'));
+    assert.ok(description.includes('建議稀釋：2\\,000 倍'));
+    assert.ok(description.includes('實際稀釋：約 2\\,000 倍'));
     assert.ok(description.includes('參考最早採收日：2026/09/07'));
   });
 
@@ -284,5 +308,7 @@ describe('googleCalendarUrl', () => {
     const params = new URL(url).searchParams;
     assert.equal(params.get('text'), '施藥｜後山酪梨園｜酪梨');
     assert.ok(params.get('details').includes('後山酪梨園'));
+    assert.ok(params.get('details').includes('建議稀釋：2,000 倍'));
+    assert.ok(params.get('details').includes('實際稀釋：約 2,000 倍'));
   });
 });

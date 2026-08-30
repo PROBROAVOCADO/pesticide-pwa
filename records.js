@@ -4,6 +4,8 @@
  * 這裡的函式都是純函式，不碰 DOM 也不碰資料庫，方便單獨測試。
  */
 
+import { actualDilution } from './calc.js';
+
 /* ------------------------------------------------------------------ */
 /* 日期                                                                */
 /* ------------------------------------------------------------------ */
@@ -139,48 +141,74 @@ const AREA_UNIT_LABEL = { fen: '分', jia: '甲', m2: '平方公尺', ha: '公�
 
 export const areaLabel = (app) => `${app.area} ${AREA_UNIT_LABEL[app.unit] || ''}`.trim();
 
+const amountLabel = (value, unit) => [value, unit].filter((part) => String(part ?? '').trim()).join(' ') || '未填寫';
+
+/** 將官方常見的「2000」「1,500倍」「1500-2000倍」整理成容易讀的格式。 */
+const recommendedDilutionLabel = (raw) => {
+  const value = String(raw ?? '').trim();
+  if (!value || value === '-' || value === '—') return '未提供';
+  const formatted = value
+    .replace(/\d[\d,]*(?:\.\d+)?/g, (part) => Number(part.replace(/,/g, '')).toLocaleString('en-US'))
+    .replace(/\s*倍/g, ' 倍')
+    .trim();
+  return formatted.includes('倍') ? formatted : `${formatted} 倍`;
+};
+
+/** API 偶爾只回「日」或「天」；這不算有效天數，不能直接印在紀錄裡。 */
+const periodLabel = (raw) => {
+  const value = String(raw ?? '').trim();
+  if (!value || /^(?:-|—|日|天)$/.test(value)) return '未提供';
+  return value.replace(/^(\d+)\s*(日|天)$/, (_, days, unit) => `${Number(days).toLocaleString('en-US')} ${unit}`);
+};
+
 /** 一次施作的完整文字，貼到手機行事曆的備註欄剛好。 */
 export function buildRecordText(app) {
   const lines = [
-    '【田間用藥・施作紀錄】',
-    `日期：${formatSlashDate(app.date)}${app.time ? ` ${app.time}` : ''}`,
-    `土地：${app.fieldName || '未命名'}`,
-    `作物：${app.crop || '—'}`,
+    '【🌿 田間用藥・施作紀錄】',
+    `📅 日期：${formatSlashDate(app.date)}${app.time ? ` ${app.time}` : ''}`,
+    `📍 土地：${app.fieldName || '未命名'}`,
+    `🌱 作物：${app.crop || '—'}`,
     `施作面積：${areaLabel(app)}`,
     `施作方式：${modeLabel(app.mode)}`,
   ];
 
   if (app.mode === 'tank') lines.push(`實際用水：${app.water} 公升`);
 
-  lines.push('', '本次用藥：');
+  lines.push('', '💊 本次用藥：');
 
-  app.drugs.forEach((drug, i) => {
-    lines.push(`${i + 1}. ${drug.name} ${drug.amount}${drug.amountUnit ? ` ${drug.amountUnit}` : ''}`);
-    if (drug.target) lines.push(`   防治：${drug.target}`);
-    if (drug.dilution) lines.push(`   稀釋：${drug.dilution}`);
-    if (app.mode === 'separate' && drug.water) lines.push(`   用水：${drug.water} 公升`);
-    if (drug.phi) lines.push(`   安全採收期：${drug.phi}`);
-    if (drug.interval) lines.push(`   施藥間隔：${drug.interval}`);
+  (app.drugs || []).forEach((drug, i) => {
+    const water = app.mode === 'separate' ? drug.water : app.water;
+    const actual = actualDilution(drug.amount, drug.amountUnit, water);
+
+    // 藥名獨立一列，避免與長藥名、用量和單位擠在一起。
+    lines.push(`${i + 1}. ${drug.name || '未命名藥劑'}`);
+    lines.push(`   本次使用量：${amountLabel(drug.amount, drug.amountUnit)}`);
+    if (drug.target) lines.push(`   防治對象：${drug.target}`);
+    if (app.mode === 'separate') lines.push(`   本次用水：${drug.water ? `${drug.water} 公升` : '未填寫'}`);
+    lines.push(`   建議稀釋：${recommendedDilutionLabel(drug.dilution)}`);
+    lines.push(`   實際稀釋：${actual ? `約 ${actual.toLocaleString('en-US')} 倍` : '無法計算'}`);
+    lines.push(`   安全採收期：${periodLabel(drug.phi)}`);
+    lines.push(`   施藥間隔：${periodLabel(drug.interval)}`);
   });
 
   // 自製或市售的微生物肥料、展著劑等，不在農藥登記資料裡，但同一桶下去了就該記下來。
   if (app.additives?.length) {
-    lines.push('', '同時添加：');
+    lines.push('', '🧴 同時添加：');
     app.additives.forEach((a, i) => {
       const amount = [a.amount, a.unit].filter(Boolean).join(' ');
       lines.push(`${i + 1}. ${a.name}${amount ? ` ${amount}` : ''}`);
       if (a.note) lines.push(`   ${a.note}`);
     });
-    lines.push('（非農藥登記品項，不列入安全採收期推算）');
+    lines.push('⚠️ 非農藥登記品項，不列入安全採收期推算。');
   }
 
-  if (app.note) lines.push('', `備註：${app.note}`);
+  if (app.note) lines.push('', `📝 備註：${app.note}`);
 
   if (app.harvestDate) {
-    lines.push('', `參考最早採收日：${formatSlashDate(app.harvestDate)}`);
+    lines.push('', `🧺 參考最早採收日：${formatSlashDate(app.harvestDate)}`);
     lines.push('（依本機施作紀錄推算，僅供參考）');
   } else {
-    lines.push('', '參考最早採收日：無法推算，請查閱產品標示');
+    lines.push('', '🧺 參考最早採收日：無法推算，請查閱產品標示');
   }
 
   return lines.join('\n');
