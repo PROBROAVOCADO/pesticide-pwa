@@ -215,7 +215,8 @@ export const getCached = (key) => get(STORE.drugCache, key).catch(() => null);
 export function cachedRangesIfFresh(row, maxAgeMs, now = Date.now()) {
   if (!row || !Array.isArray(row.ranges)) return null;
   const status = row.rangeStatus || (row.ranges.length ? 'ok' : '');
-  if (!['ok', 'empty', 'no-link'].includes(status)) return null;
+  // 舊介接曾對一般成品大量回傳空陣列；empty 不再視為可重用的可信結論。
+  if (!['ok', 'no-link'].includes(status)) return null;
 
   const savedAt = Number(row.rangesFetchedAt ?? row.fetchedAt);
   const maxAge = Number(maxAgeMs);

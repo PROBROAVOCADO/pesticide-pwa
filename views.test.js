@@ -5,6 +5,7 @@ import {
   drugCardHtml,
   esc,
   highlight,
+  rangeNoticeHtml,
   recordDetailHtml,
   recordFormHtml,
   recordGuidanceHtml,
@@ -152,9 +153,23 @@ describe('drugCardHtml：過期與撤銷要標出來', () => {
   });
 });
 
+describe('使用範圍未知狀態的安全文案', () => {
+  it('官方介接失敗時明講無法確認，而不是宣告沒有核准', () => {
+    const html = rangeNoticeHtml({ rangeStatus: 'failed' }, '酪梨');
+    assert.ok(html.includes('無法確認核准範圍'));
+    assert.ok(html.includes('這不等於未核准'));
+    assert.ok(!html.includes('這筆登記資料沒有附使用範圍'));
+  });
+
+  it('舊快取的空清單也不再當成未核准結論', () => {
+    const html = rangeNoticeHtml({ rangeStatus: 'empty' }, '酪梨');
+    assert.ok(html.includes('空清單不代表未核准'));
+  });
+});
+
 describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
   const html = settingsViewHtml({
-    version: 'v1.4.9',
+    version: 'v1.5.0',
     aphiaUrl: 'https://example.com/aphia',
     lineUrl: 'https://example.com/line',
     fieldCount: 2,
@@ -185,18 +200,18 @@ describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
 
   it('版本摘要只顯示最新三個版本', () => {
     assert.deepEqual(html.match(/<b>v\d+\.\d+\.\d+(?:・這一版)?<\/b>/g), [
-      '<b>v1.4.9・這一版</b>',
+      '<b>v1.5.0・這一版</b>',
+      '<b>v1.4.9</b>',
       '<b>v1.4.8</b>',
-      '<b>v1.4.7</b>',
     ]);
-    assert.ok(!html.includes('v1.4.6'));
+    assert.ok(!html.includes('v1.4.7'));
   });
 
   it('在設定頁最下方顯示動態版本與年份的品牌署名', () => {
     assert.equal((html.match(/class="colophon"/g) || []).length, 1);
     assert.ok(html.includes('PRO-BRO AVOCADO'));
     assert.ok(html.includes('A field tool for growers, built on a family avocado farm in Nantou, Taiwan.'));
-    assert.ok(html.includes(`v1.4.9 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
+    assert.ok(html.includes(`v1.5.0 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
     assert.ok(html.indexOf('買杯咖啡支持') < html.indexOf('class="colophon"'));
   });
 });

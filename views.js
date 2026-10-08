@@ -319,18 +319,18 @@ export function rangeNoticeHtml(item, crop) {
 
   if (item.rangeStatus === 'empty') {
     return card(
-      '⚠️ 官方回傳空清單',
-      '查得到這支藥，但沒有使用範圍',
-      '官方的使用範圍資料是空的。你仍然可以記下實際施作，但請依照產品標示調配。',
-      'warn',
+      '⚠️ 無法確認核准範圍',
+      '舊版官方介接回傳空清單',
+      '空清單不代表未核准。請改以產品標示或官方農藥資訊服務網確認。',
+      'info',
     );
   }
 
   if (item.rangeStatus === 'failed') {
     return card(
-      '📡 讀不到使用範圍',
-      '暫時取不到官方資料',
-      '可能是網路不通，或這支藥還沒在這台裝置查過。可以稍後再試，仍然可以先記下實際施作。',
+      '📡 無法確認核准範圍',
+      '使用範圍資料暫時無法判定',
+      '可能是目前離線、資料快照沒有完全相符的含量與劑型，或官方介接異常。這不等於未核准，請以產品標示或官方查詢為準。',
       'info',
     );
   }
@@ -721,7 +721,13 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.4.9・這一版</b>
+      <b>v1.5.0・這一版</b>
+      <ul>
+        <li>作物核准比對改用防檢署「農藥代號＋含量＋劑型」使用範圍快照，避免舊介接空清單造成假性未核准。</li>
+        <li>資料無法取得時改列為「無法確認」，不再把未知狀態誤判成沒有核准。</li>
+      </ul>
+
+      <b>v1.4.9</b>
       <ul>
         <li>施作紀錄新增「自訂配方／資材」入口，不選農業部藥劑也能記錄實際用量、用水與土地。</li>
         <li>自訂項目可從過去紀錄快速加入，並依實際用量與總用水反推當次稀釋倍數。</li>
@@ -730,12 +736,6 @@ function releaseLogHtml() {
       <b>v1.4.8</b>
       <ul>
         <li>施作紀錄與行事曆備註移除面積、施作方式、用水及藥劑細項前的圖示，保留其餘區塊圖示。</li>
-      </ul>
-
-      <b>v1.4.7</b>
-      <ul>
-        <li>完成施作後的完整紀錄改成分行格式，並以適量圖示整理日期、土地、用水與採收資訊。</li>
-        <li>每支藥同時列出官方建議稀釋與依實際用量、用水反推的實際稀釋；行事曆備註同步套用。</li>
       </ul>
 
     </div>`;
@@ -855,14 +855,14 @@ export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCo
 export function detailHtml({ drug, ranges, loading, crop, shown, pinned, rangeStatus }) {
   const resistance = text(drug['FRAC殺菌劑抗藥性']) || text(drug['IRAC殺蟲劑抗藥性']);
 
-  // 分清楚三種「沒有資料」：官方沒附連結、連結給了空清單、我們讀不到。
+  // 分清楚「沒有資料」與「無法確認」；後者絕不能顯示成未核准。
   const emptyReason =
     rangeStatus === 'no-link'
       ? '這筆登記資料沒有附核准使用範圍。可能是原體、技術級產品，或官方尚未提供，請以手上產品的中文標示為準。'
       : rangeStatus === 'empty'
-        ? '官方有給連結，但回傳的使用範圍是空的。請以手上產品的中文標示為準。'
+        ? '舊版官方介接回傳空清單；空清單不代表未核准，請以手上產品的中文標示為準。'
         : rangeStatus === 'failed'
-          ? '目前讀不到官方的使用範圍，可能是網路不通。稍後再試試看。'
+          ? '目前無法確認使用範圍。可能是離線、資料快照沒有完全相符的含量與劑型，或官方介接異常；這不等於未核准。'
           : `沒有符合「${crop}」的核准範圍。清空上面的欄位可以看全部用途。`;
 
   const rangeCards = loading
@@ -886,7 +886,7 @@ export function detailHtml({ drug, ranges, loading, crop, shown, pinned, rangeSt
           })
           .join('')
       : `<div class="verdict ${rangeStatus === 'failed' ? 'info' : 'warn'}">
-           <span class="verdict-label">${rangeStatus && rangeStatus !== 'ok' ? '⚠️ 沒有核准使用範圍' : '🔍 查無符合'}</span>
+           <span class="verdict-label">${rangeStatus === 'failed' || rangeStatus === 'empty' ? '⚠️ 無法確認核准範圍' : rangeStatus && rangeStatus !== 'ok' ? '⚠️ 沒有核准使用範圍' : '🔍 查無符合'}</span>
            <p>${esc(emptyReason)}</p>
          </div>`;
 

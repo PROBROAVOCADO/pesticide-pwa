@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { classTone, drugSubtitle, drugTitle, license, licenseStatus, matchesCrop, normalize, parseRocDate, scanDrugsByCrop, statusRank, uniqueDrugs } from './moa.js';
+import { classTone, drugSubtitle, drugTitle, license, licenseStatus, loadRanges, matchesCrop, normalize, parseRocDate, scanDrugsByCrop, statusRank, uniqueDrugs } from './moa.js';
+import { clearRangeCatalogCache } from './range-catalog.js';
 
 describe('normalize：作物名稱正規化', () => {
   it('臺與台視為同一個字', () => {
@@ -96,6 +97,69 @@ describe('scanDrugsByCrop：完整比對藥名搜尋結果', () => {
     assert.deepEqual(result.matched.map((d) => d.廠牌名稱), ['大卡稱']);
     assert.deepEqual(matches, ['大卡稱']);
     assert.deepEqual(progress.at(-1), [80, 80]);
+  });
+
+  it('使用範圍無法確認時只統計為失敗，不會誤列為未核准', async () => {
+    const result = await scanDrugsByCrop(
+      [{ 許可證字: '農藥製', 許可證號: '00001' }],
+      '酪梨',
+      async () => ({ ranges: [], status: 'failed' }),
+    );
+    assert.deepEqual(result.matched, []);
+    assert.equal(result.failed, 1);
+  });
+});
+
+describe('loadRanges：使用範圍來源優先順序', () => {
+  const originalFetch = globalThis.fetch;
+  const drug = {
+    農藥代號: 'F246',
+    劑型: 'WP',
+    含量: '71.600 (%)',
+    許可證字: '農藥製',
+    許可證號: '05130',
+    農藥使用範圍: 'https://example.com/legacy',
+  };
+
+  it('優先使用代號、劑型與含量完全相符的本機快照', async () => {
+    clearRangeCatalogCache();
+    globalThis.fetch = async (url) => {
+      assert.ok(String(url).endsWith('/ranges/F2.json'));
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          items: {
+            F246: [{ form: 'WP', contentKey: '71.6', ranges: [{ 作物名稱: '酪梨', 病蟲害名稱: '疫病' }] }],
+          },
+        }),
+      };
+    };
+    try {
+      const result = await loadRanges(drug);
+      assert.equal(result.status, 'ok');
+      assert.equal(result.source, 'catalog');
+      assert.equal(result.ranges[0].作物名稱, '酪梨');
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearRangeCatalogCache();
+    }
+  });
+
+  it('一般成品的舊介接空清單視為未知，不視為未核准', async () => {
+    clearRangeCatalogCache();
+    globalThis.fetch = async (url) => {
+      if (String(url).endsWith('/ranges/F2.json')) return { ok: false, status: 404 };
+      return { ok: true, status: 200, json: async () => [] };
+    };
+    try {
+      const result = await loadRanges(drug);
+      assert.equal(result.status, 'failed');
+      assert.deepEqual(result.ranges, []);
+    } finally {
+      globalThis.fetch = originalFetch;
+      clearRangeCatalogCache();
+    }
   });
 });
 

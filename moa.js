@@ -2,6 +2,8 @@
  * 農業部農藥登記公開資料的存取與欄位處理。
  */
 
+import { loadCatalogRanges } from './range-catalog.js';
+
 const MOA_API = 'https://data.moa.gov.tw/Service/OpenData/FromM/PesticideData.aspx';
 
 /** 把可能是 null／undefined 的欄位值轉成去頭尾空白的字串。 */
@@ -254,10 +256,24 @@ export const drugIdentity = (d) =>
  * 應該知道是這支藥真的沒登記用途，還是我們讀不到。
  */
 export async function loadRanges(drug) {
+  // 優先讀取隨 App 發布的防檢署使用範圍快照。
+  // 舊的 PesticideDetail 連結目前常對一般成品回傳空陣列，不能再把它當成「未核准」。
+  try {
+    const catalog = await loadCatalogRanges(drug);
+    if (catalog.status === 'ok') return catalog;
+  } catch {
+    // 快照尚未下載且目前離線時，繼續嘗試舊介接；呼叫端仍有 IndexedDB 備援。
+  }
+
   const url = text(drug['農藥使用範圍']);
-  if (!url) return { ranges: [], status: 'no-link' };
+  const technicalProduct = /^農藥原/.test(text(drug['許可證字']));
+  if (!url) return { ranges: [], status: technicalProduct ? 'no-link' : 'failed' };
 
   const ranges = await fetchJson(url.replace(/^http:/, 'https:'));
   const rows = Array.isArray(ranges) ? ranges : [];
-  return { ranges: rows, status: rows.length ? 'ok' : 'empty' };
+  if (rows.length) return { ranges: rows, status: 'ok', source: 'legacy-detail' };
+
+  // 原體／技術級產品本來可能沒有田間用途；一般成品回空清單則只能視為未知。
+  // 「不知道」不能被搜尋流程誤寫成「沒有核准」。
+  return { ranges: [], status: technicalProduct ? 'no-link' : 'failed', source: 'legacy-detail' };
 }

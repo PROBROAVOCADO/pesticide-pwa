@@ -16,14 +16,13 @@ describe('cachedRangesIfFresh：核准範圍的 24 小時快取判斷', () => {
     assert.equal(result.fromCache, true);
   });
 
-  it('沒有使用範圍的結果也能暫存，避免每次重查', () => {
+  it('舊介接的空清單不再當成可信結論，避免把未知誤判成未核准', () => {
     const result = cachedRangesIfFresh(
       { ranges: [], rangeStatus: 'empty', rangesFetchedAt: now - 1000 },
       oneDay,
       now,
     );
-    assert.deepEqual(result.ranges, []);
-    assert.equal(result.status, 'empty');
+    assert.equal(result, null);
   });
 
   it('超過期限就回 null，讓程式重新向官方確認', () => {

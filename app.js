@@ -53,7 +53,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.4.9';
+const VERSION = 'v1.5.0';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -389,7 +389,11 @@ async function rangesWithFallback(drug, { forceNetwork = false } = {}) {
   }
 
   try {
-    return await loadOfficialRangesOnce(drug, key);
+    const result = await loadOfficialRangesOnce(drug, key);
+    if (result.status === 'failed' && cached?.ranges?.length) {
+      return { ranges: cached.ranges, status: 'ok', fromCache: true, stale: true };
+    }
+    return result;
   } catch {
     if (cached?.ranges?.length) return { ranges: cached.ranges, status: 'ok', fromCache: true, stale: true };
     return { ranges: [], status: 'failed' };
@@ -500,7 +504,9 @@ async function runMainSearch() {
       state.search.drugs = matched;
       state.search.message = matched.length
         ? `完整比對 ${scanned} 筆，其中 ${matched.length} 筆核准用於「${crop}」`
-        : `完整比對的 ${scanned} 筆藥劑都沒有核准用於「${crop}」`;
+        : failed
+          ? `已比對 ${scanned} 筆，但有 ${failed} 筆使用範圍無法確認，暫時不能判定「${crop}」是否核准`
+          : `完整比對的 ${scanned} 筆藥劑都沒有核准用於「${crop}」`;
 
       const notes = [];
       if (cached) notes.push(`其中 ${cached} 筆使用 24 小時內的本機資料加速比對；點開明細或選用時會再向官方確認。`);
