@@ -54,13 +54,14 @@ export function formatSlashDate(dateKey) {
 
 /**
  * 從官方欄位取出天數。
- * 常見寫法：「12 天」「採收前12天停止施藥」「7天」「-」「不需訂定」「依標示」。
+ * 常見寫法：「12」「12 天」「採收前12天停止施藥」「7天」「-」「不需訂定」「依標示」。
+ * 呼叫端傳入的必須是天數欄位；官方快照通常省略天／日單位。
  * 取不出數字就回 null —— 這種時候絕對不能自己編一個天數出來。
  */
 export function parseDays(raw) {
   const clean = String(raw ?? '').replace(/,/g, '').trim();
   if (!clean || clean === '-') return null;
-  const match = clean.match(/(\d+(?:\.\d+)?)\s*(?:天|日)/);
+  const match = clean.match(/^(\d+(?:\.\d+)?)$/) || clean.match(/(\d+(?:\.\d+)?)\s*(?:天|日)/);
   if (!match) return null;
   const days = Number(match[1]);
   return Number.isFinite(days) ? Math.ceil(days) : null;

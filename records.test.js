@@ -41,8 +41,17 @@ describe('parseDays：官方「安全採收期」「施藥間隔」欄位', () =
     assert.equal(parseDays(null), null);
   });
 
-  it('沒有「天」字的純數字不算，避免把別的欄位誤讀成天數', () => {
-    assert.equal(parseDays('12'), null);
+  it('官方天數欄位的純數字也能讀取', () => {
+    assert.equal(parseDays('12'), 12);
+    assert.equal(parseDays(7), 7);
+    assert.equal(parseDays(' 1.5 '), 2);
+    assert.equal(parseDays('0'), 0);
+  });
+
+  it('不把其他單位或不明文字當成天數', () => {
+    for (const raw of ['12倍', '12公斤', '依標示12', '7-10', '-3', '日']) {
+      assert.equal(parseDays(raw), null);
+    }
   });
 });
 
@@ -70,6 +79,12 @@ describe('日期計算', () => {
 });
 
 describe('harvestInfo：參考最早採收日', () => {
+  it('三種藥混桶讀取官方純數字天數並取最長值', () => {
+    assert.deepEqual(harvestInfo('2026-11-08', [{ phi: '7' }, { phi: '21' }, { phi: '14' }]), {
+      days: 21, date: '2026-11-29', unknown: false,
+    });
+  });
+
   it('單一藥劑直接加上安全採收期', () => {
     const r = harvestInfo('2026-08-26', [{ phi: '7 天' }]);
     assert.equal(r.days, 7);
