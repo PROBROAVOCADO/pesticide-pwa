@@ -55,7 +55,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.5.2';
+const VERSION = 'v1.5.3';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -132,6 +132,7 @@ const state = {
   fields: [],
   applications: [],
   favorites: [],
+  favoritesExpanded: false,
   overlay: null, // { kind, ... }
   installPrompt: null,
   persisted: false,
@@ -167,6 +168,7 @@ const views = {
       matched: visible.length,
       shownLimit: SEARCH_DISPLAY_LIMIT,
       allApproved: Boolean(s.crop.trim() && s.query.trim()),
+      favorites: favoriteOptions(),
     });
   },
   calc: () => calcViewHtml(state.calc, state.fields, areaHa(), canRecord(), favoriteOptions()),
@@ -193,6 +195,8 @@ const views = {
 
 /** 重畫整個分頁。使用者正在打字時不要呼叫，游標會跑掉。 */
 function render() {
+  const favoritesPanel = screenEl.querySelector('[data-favorites-panel]');
+  if (favoritesPanel) state.favoritesExpanded = favoritesPanel.open;
   screenEl.innerHTML = views[state.tab]();
   for (const button of tabsEl.querySelectorAll('button')) {
     button.setAttribute('aria-current', String(button.dataset.tab === state.tab));
@@ -532,10 +536,11 @@ async function runMainSearch() {
 }
 
 async function openDetail(drug) {
-  state.overlay = { kind: 'detail', drug, ranges: [], loading: true, crop: '' };
+  const detail = { kind: 'detail', drug, ranges: [], loading: true, crop: '' };
+  state.overlay = detail;
   renderOverlay();
   const { ranges, status } = await rangesWithFallback(drug, { forceNetwork: true });
-  if (state.overlay?.kind === 'detail') {
+  if (state.overlay === detail) {
     state.overlay.ranges = ranges;
     state.overlay.rangeStatus = status;
     state.overlay.loading = false;
@@ -732,7 +737,7 @@ function favoriteOptions() {
     }
   }
 
-  return { pinned, recent: [...seen.values()].slice(0, RECENT_DRUG_LIMIT) };
+  return { pinned, recent: [...seen.values()].slice(0, RECENT_DRUG_LIMIT), expanded: state.favoritesExpanded };
 }
 
 /** 過去真正保存過的添加物才列為常用；只帶名稱與單位，不沿用上次用量。 */
@@ -1305,6 +1310,11 @@ const ACTIONS = {
 
   'toggle-favorite': () => toggleFavorite(),
   'remove-pinned-favorite': (d) => removePinnedFavorite(d.key),
+  'open-pinned-favorite': (d) => {
+    const drug = state.favorites.find((favorite) => favorite.key === d.key)?.drug;
+    if (drug) openDetail(drug);
+    else toast('這台裝置沒有保存這支藥的詳情，請查詢藥名');
+  },
 
   /* 其他 */
   install: () => install(),

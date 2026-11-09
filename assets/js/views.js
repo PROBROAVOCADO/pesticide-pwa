@@ -134,6 +134,7 @@ export function searchViewHtml({
   total,
   matched,
   shownLimit,
+  favorites,
 }) {
   // 結果多的時候給一個就地篩選欄：查完「亞托敏」再打「大卡」就能挑出想要的廠牌。
   // 這個欄位放在表單裡而不是結果區 —— 結果重畫時輸入框才不會被拆掉，游標不會跳走。
@@ -168,6 +169,7 @@ export function searchViewHtml({
         <small>${esc(message)}</small>
       </form>
 
+      ${favoritesPanelHtml(favorites)}
       ${note ? `<p class="offline-note">${esc(note)}</p>` : ''}
 
       <div id="search-results">${searchResultsHtml({ drugs, loading, allApproved, total, matched, shownLimit, keyword: filter.trim() || query })}</div>
@@ -521,6 +523,32 @@ export function calcItemsHtml(calc, areaHa, favorites) {
     areaHa, Number(calc.water) || 0, favorites, calc.crop)).join('');
 }
 
+function favoritesPanelHtml({ pinned = [], expanded = false } = {}) {
+  return `
+    <details class="favorites-panel" data-favorites-panel${expanded ? ' open' : ''}>
+      <summary class="favorites-trigger">
+        <span class="favorites-icon" aria-hidden="true">★</span>
+        <span class="favorites-heading">
+          <strong>常用藥劑</strong>
+          <span>已釘選 ${pinned.length} 支</span>
+        </span>
+        <span class="favorites-trigger-label">管理 <span class="favorites-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="favorites-content">
+        ${pinned.length ? `
+          <p>移除常用只會取消釘選，已選藥劑和施作紀錄會保留；曾使用的藥劑仍可能顯示在「最近用過」。</p>
+          <ul class="favorites-list">
+            ${pinned.map((favorite) => `<li>
+              <button type="button" class="favorites-detail" data-action="open-pinned-favorite" data-key="${esc(favorite.key)}">
+                <strong>${esc(favorite.name)}</strong><span>查看詳情 ›</span>
+              </button>
+              <button type="button" class="favorites-remove" data-action="remove-pinned-favorite" data-key="${esc(favorite.key)}" aria-label="移除常用：${esc(favorite.name)}">移除常用</button>
+            </li>`).join('')}
+          </ul>` : '<p>還沒有釘選藥劑。在「藥劑查詢」開啟藥劑詳情，點「釘選為常用藥劑」就能加入。</p>'}
+      </div>
+    </details>`;
+}
+
 export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
   const { crop, area, areaUnit, water, items, fieldId } = calc;
 
@@ -561,19 +589,12 @@ export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
         <p class="conversion" id="area-conversion">${conversionText(areaHa)}</p>
       </div>
 
+      ${favoritesPanelHtml(favorites)}
       <div class="section-row">
         <h3>💊 本次藥劑</h3>
         <span>${items.length} 種</span>
       </div>
 
-      ${favorites?.pinned?.length ? `<details class="setting-disclosure">
-        <summary>管理常用藥劑（${favorites.pinned.length}）</summary>
-        <p>移除常用只會取消釘選，已選藥劑和施作紀錄會保留；曾使用的藥劑仍可能顯示在「最近用過」。</p>
-        ${favorites.pinned.map((favorite) => `<div class="section-row">
-          <span>${esc(favorite.name)}</span>
-          <button type="button" class="remove" data-action="remove-pinned-favorite" data-key="${esc(favorite.key)}">移除常用</button>
-        </div>`).join('')}
-      </details>` : ''}
       <div id="calc-items">${calcItemsHtml(calc, areaHa, favorites)}</div>
 
       <button class="add-drug" type="button" data-action="add-item"><span>＋</span>增加一種藥劑</button>
@@ -734,7 +755,12 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.5.2・這一版</b>
+      <b>v1.5.3・這一版</b>
+      <ul>
+        <li>藥劑查詢與用量試算新增一致的常用藥劑卡片，顯示釘選數量，可直接查看詳情或移除常用。</li>
+      </ul>
+
+      <b>v1.5.2</b>
       <ul>
         <li>用量試算更改作物或切換土地時，已選藥劑的防治作物、病蟲害用途與用量同步切換，不必重新選藥。</li>
         <li>新增「管理常用藥劑」，可直接移除釘選；已選藥劑與施作紀錄會保留。</li>
@@ -746,13 +772,6 @@ function releaseLogHtml() {
         <li>修正安全採收期為純數字時無法讀取的問題，同桶多種藥劑可依最長的有效天數推算參考最早採收日。</li>
         <li>已儲存但顯示「無法推算」的紀錄，請開啟「編輯」再儲存，即可依原紀錄中的安全採收期重新計算；缺少天數的藥劑仍需查閱產品標示。</li>
       </ul>
-
-      <b>v1.5.0</b>
-      <ul>
-        <li>作物核准比對改用防檢署「農藥代號＋含量＋劑型」使用範圍快照，避免舊介接空清單造成假性未核准。</li>
-        <li>資料無法取得時改列為「無法確認」，不再把未知狀態誤判成沒有核准。</li>
-      </ul>
-
 
     </div>`;
 }

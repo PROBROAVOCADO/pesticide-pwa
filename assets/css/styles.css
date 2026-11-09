@@ -311,3 +311,24 @@ input,select,textarea{font-family:inherit;font-size:16px;line-height:1.5}
 .compact-field{margin-bottom:8px}
 .compact-field input{height:46px}
 @media (min-width:900px){ .result-list{max-height:460px} }
+
+/* 查詢、試算共用的常用藥劑管理卡片 */
+.favorites-panel{margin:0 0 18px;background:var(--paper);border:1px solid var(--rule);border-radius:var(--radius);box-shadow:0 3px 12px rgba(90,78,58,.07)}
+.favorites-trigger{display:flex;align-items:center;gap:12px;min-height:68px;padding:12px 14px;border-radius:inherit;list-style:none;cursor:pointer}
+.favorites-trigger::-webkit-details-marker{display:none}
+.favorites-trigger::marker{content:""}
+.favorites-icon{display:grid;place-items:center;flex:0 0 38px;height:38px;border-radius:12px;background:var(--sunken);color:var(--brown);font-size:20px}
+.favorites-heading{display:grid;gap:1px;flex:1;min-width:0}
+.favorites-heading strong{color:var(--ink);font-size:16px}
+.favorites-heading>span,.favorites-detail>span{color:var(--muted);font-size:12px}
+.favorites-trigger-label{display:inline-flex;align-items:center;gap:10px;padding:8px 12px;border-radius:999px;background:var(--herb);color:#fff;font-size:13px;font-weight:700;white-space:nowrap}
+.favorites-chevron{display:block;width:7px;height:7px;border:solid currentColor;border-width:0 2px 2px 0;transform:translateY(-2px) rotate(45deg)}
+.favorites-panel[open] .favorites-chevron{transform:translateY(2px) rotate(225deg)}
+.favorites-content{padding:12px 14px 8px;border-top:1px solid var(--soft)}
+.favorites-content>p{margin:0 0 8px;color:var(--muted);font-size:13px;line-height:1.6}
+.favorites-list{margin:0;padding:0;list-style:none}
+.favorites-list li{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid var(--soft)}
+.favorites-detail,.favorites-remove{min-height:44px;border:0;border-radius:10px;background:none;cursor:pointer}
+.favorites-detail{display:grid;gap:1px;flex:1;min-width:0;padding:4px 6px;color:var(--ink);text-align:left;overflow-wrap:anywhere}
+.favorites-remove{flex-shrink:0;padding:4px 10px;color:var(--brick);background:#f7eee8;font-size:13px;font-weight:700}
+.favorites-panel :is(summary,button):focus-visible{outline:2px solid var(--herb);outline-offset:2px}

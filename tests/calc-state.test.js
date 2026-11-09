@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { syncItemCrop } from '../assets/js/calc-state.js';
-import { calcViewHtml } from '../assets/js/views.js';
+import { calcViewHtml, searchViewHtml } from '../assets/js/views.js';
 
 const avocado = { 作物名稱: '酪梨', 病蟲害名稱: '疫病', 稀釋倍數: '1000', 安全採收期: '7' };
 const tomato = { 作物名稱: '番茄', 病蟲害名稱: '晚疫病', 稀釋倍數: '2000', 安全採收期: '14' };
@@ -38,12 +38,27 @@ describe('切換作物', () => {
   });
 });
 
-it('常用管理列出每支釘選的移除按鈕，並說明最近用過與紀錄仍保留', () => {
-  const html = calcViewHtml({ crop: '', area: '1', areaUnit: 'fen', water: '200', items: [], fieldId: '' },
-    [], 1, false, { pinned: [{ key: 'a"b', name: '<藥劑>' }], recent: [] });
-  assert.ok(html.includes('管理常用藥劑（1）'));
+it('查詢及試算共用常用管理卡片，可以查看詳情及移除釘選', () => {
+  const favorites = { pinned: [{ key: 'a"b', name: '<藥劑>' }], recent: [], expanded: true };
+  const calc = calcViewHtml({ crop: '', area: '1', areaUnit: 'fen', water: '200', items: [], fieldId: '' },
+    [], 1, false, favorites);
+  const search = searchViewHtml({ query: '', filter: '', drugs: [], favorites });
+  const panel = (page) => page.match(/<details class="favorites-panel"[\s\S]*?<\/details>/)?.[0];
+  const html = panel(calc);
+  assert.ok(html);
+  assert.equal(panel(search), html);
+  assert.ok(html.includes('data-favorites-panel open'));
+  assert.ok(html.includes('已釘選 1 支'));
+  assert.ok(html.includes('data-action="open-pinned-favorite" data-key="a&quot;b"'));
   assert.ok(html.includes('data-action="remove-pinned-favorite" data-key="a&quot;b"'));
   assert.ok(html.includes('&lt;藥劑&gt;'));
   assert.ok(html.includes('最近用過'));
   assert.ok(html.includes('施作紀錄會保留'));
+});
+
+it('沒有常用藥劑時仍顯示管理入口及如何釘選', () => {
+  const html = searchViewHtml({ query: '', filter: '', drugs: [] });
+  assert.ok(html.includes('已釘選 0 支'));
+  assert.ok(html.includes('還沒有釘選藥劑'));
+  assert.ok(!html.includes('data-action="remove-pinned-favorite"'));
 });
