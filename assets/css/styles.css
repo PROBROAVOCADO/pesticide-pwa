@@ -332,3 +332,24 @@ input,select,textarea{font-family:inherit;font-size:16px;line-height:1.5}
 .favorites-detail{display:grid;gap:1px;flex:1;min-width:0;padding:4px 6px;color:var(--ink);text-align:left;overflow-wrap:anywhere}
 .favorites-remove{flex-shrink:0;padding:4px 10px;color:var(--brick);background:#f7eee8;font-size:13px;font-weight:700}
 .favorites-panel :is(summary,button):focus-visible{outline:2px solid var(--herb);outline-offset:2px}
+/* 閱讀層級與共用底部面板 */
+.sheet { overscroll-behavior-y: contain; }
+.sheet-grip { min-height: 22px; display: grid; place-items: center; touch-action: none; cursor: grab; }
+.sheet-grip .sheet-handle { display: block; margin: 0; background: var(--muted); opacity: .48; }
+.sheet-head { gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--soft); margin-bottom: 16px; }
+.sheet-head .eyebrow { color: var(--herb); font-size: 12px; letter-spacing: .06em; }
+.sheet-head h2 { margin: 4px 0 0; color: var(--ink); font-size: clamp(23px, 5vw, 29px); line-height: 1.2; overflow-wrap: anywhere; }
+.sheet-head .icon-btn { flex-shrink: 0; }
+.sheet-subheading, .section-row h3, .pending-card h3 { color: var(--ink); font-size: 17px; line-height: 1.4; font-weight: 750; }
+.sheet-subheading { margin: 18px 0 9px; }
+.detail-grid span, .range-card dt, .check-rows dt { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.detail-grid b, .range-card dd, .check-rows dd { color: var(--ink); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.range-card > div > strong { color: var(--herb); font-size: 16px; }
+.range-card > div > span { color: var(--brown); font-size: 13px; }
+.sheet .legal-note, .range-card p { line-height: 1.65; }
+.record-row.harvest-review { border-color: #d6b67d; background: #fff8e9; }
+.record-row.harvest-review strong { color: #774e16; }
+.template-editor { padding: 14px; }
+.template-additive .field { min-width: 0; margin-bottom: 0; }
+.template-additive .field:first-child { flex: 2; }
+.template-additive .field:nth-child(2) { flex: 1; }

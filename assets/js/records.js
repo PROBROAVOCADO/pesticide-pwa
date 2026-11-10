@@ -5,6 +5,7 @@
  */
 
 import { actualDilution } from './calc.js';
+import { normalize, text } from './moa.js';
 
 /* ------------------------------------------------------------------ */
 /* 日期                                                                */
@@ -71,13 +72,41 @@ export function parseDays(raw) {
  * 一次施作的參考最早採收日。
  * 多種藥劑時取最長的安全採收期；所有藥劑都沒有天數就回 null。
  */
+export function missingHarvestDrugs(drugs = []) {
+  return drugs.filter((d) => d.rangeVerified === false || parseDays(d.phi) === null)
+    .map((d) => d.name || '未命名藥劑');
+}
+
+export function matchingRecordRanges(ranges, crop) {
+  const wanted = normalize(crop);
+  if (!wanted) return [];
+  return ranges.filter((range) => normalize(text(range['作物名稱'])) === wanted);
+}
+
+export const verifiedRecordRange = (drug, crop) =>
+  drug.rangeVerified === true && matchingRecordRanges([{ 作物名稱: drug.cropOfficial }], crop).length > 0;
+
+export const recordWater = (draft) => draft.mode === 'tank' && draft.buckets?.length
+  ? draft.buckets.reduce((sum, value) => sum + (Number(value) || 0), 0)
+  : draft.water;
+
+export function recordHarvest(app) {
+  const drugs = app.drugs || [];
+  // 舊紀錄沒有保存用途的作物來源，須重新核對。
+  const verified = drugs.map((d) => ({
+    ...d,
+    rangeVerified: verifiedRecordRange(d, app.crop),
+  }));
+  return { ...harvestInfo(app.date, verified), missing: missingHarvestDrugs(verified) };
+}
+
 export function harvestInfo(dateKey, drugs) {
-  const days = drugs.map((d) => parseDays(d.phi)).filter((n) => n !== null);
+  const days = drugs.map((d) => d.rangeVerified === false ? null : parseDays(d.phi)).filter((n) => n !== null);
   if (!days.length) return { days: null, date: null, unknown: drugs.length > 0 };
   const max = Math.max(...days);
   return {
     days: max,
-    date: addDays(dateKey, max),
+    date: dateKey ? addDays(dateKey, max) : null,
     // 有些藥有天數、有些沒有，推算結果只涵蓋看得懂的那幾種。
     unknown: days.length < drugs.length,
   };
@@ -87,12 +116,24 @@ export function harvestInfo(dateKey, drugs) {
  * 目前還沒到安全採收期的土地。
  * 同一塊地若有多次施作，以最晚的那個採收日為準。
  */
+export function harvestOverview(applications, today = todayKey()) {
+  const pending = [];
+  const known = [];
+  for (const app of applications) {
+    if (!app.drugs?.length) continue;
+    const info = recordHarvest(app);
+    if (info.unknown) pending.push({ ...app, harvestDate: info.date, missing: info.missing });
+    else known.push({ ...app, harvestDate: info.date });
+  }
+  return { pending, countdowns: pendingHarvests(known, today) };
+}
+
 export function pendingHarvests(applications, today = todayKey()) {
   const byField = new Map();
 
   for (const app of applications) {
     if (!app.harvestDate || app.harvestDate <= today) continue;
-    const key = app.fieldId || app.fieldName;
+    const key = JSON.stringify([app.fieldId || app.fieldName, normalize(app.crop)]);
     const current = byField.get(key);
     if (!current || app.harvestDate > current.harvestDate) {
       byField.set(key, {
@@ -171,6 +212,7 @@ export function buildRecordText(app) {
   const drugs = app.drugs || [];
   const additives = app.additives || [];
   const customOnly = isCustomRecord(app);
+  const harvest = recordHarvest(app);
   const lines = [
     '【🌿 田間用藥・施作紀錄】',
     `📅 日期：${formatSlashDate(app.date)}${app.time ? ` ${app.time}` : ''}`,
@@ -181,6 +223,7 @@ export function buildRecordText(app) {
   ];
 
   if (app.mode === 'tank') lines.push(`實際用水：${app.water} 公升`);
+  if (app.buckets?.length) lines.push(`分桶用水量：${app.buckets.join(' ＋ ')} 公升`);
 
   if (drugs.length) {
     lines.push('', '💊 本次用藥：');
@@ -188,16 +231,17 @@ export function buildRecordText(app) {
     drugs.forEach((drug, i) => {
       const water = app.mode === 'separate' ? drug.water : app.water;
       const actual = actualDilution(drug.amount, drug.amountUnit, water);
+      const verified = verifiedRecordRange(drug, app.crop);
 
       // 藥名獨立一列，避免與長藥名、用量和單位擠在一起。
       lines.push(`${i + 1}. ${drug.name || '未命名藥劑'}`);
       lines.push(`   本次使用量：${amountLabel(drug.amount, drug.amountUnit)}`);
-      if (drug.target) lines.push(`   防治對象：${drug.target}`);
+      if (verified && drug.target) lines.push(`   防治對象：${drug.target}`);
       if (app.mode === 'separate') lines.push(`   本次用水：${drug.water ? `${drug.water} 公升` : '未填寫'}`);
-      lines.push(`   建議稀釋：${recommendedDilutionLabel(drug.dilution)}`);
+      lines.push(`   建議稀釋：${verified ? recommendedDilutionLabel(drug.dilution) : '待確認'}`);
       lines.push(`   實際稀釋：${actual ? `約 ${actual.toLocaleString('en-US')} 倍` : '無法計算'}`);
-      lines.push(`   安全採收期：${periodLabel(drug.phi)}`);
-      lines.push(`   施藥間隔：${periodLabel(drug.interval)}`);
+      lines.push(`   安全採收期：${verified ? periodLabel(drug.phi) : '待確認'}`);
+      lines.push(`   施藥間隔：${verified ? periodLabel(drug.interval) : '待確認'}`);
     });
   }
 
@@ -230,8 +274,11 @@ export function buildRecordText(app) {
   if (customOnly) {
     lines.push('', '🧺 安全採收提醒：無官方資料，無法推算');
     lines.push('（若配方含農藥成分，請依各產品標示中最長的安全採收期）');
-  } else if (app.harvestDate) {
-    lines.push('', `🧺 參考最早採收日：${formatSlashDate(app.harvestDate)}`);
+  } else if (harvest.unknown) {
+    lines.push('', '🧺 採收期：待確認', '待確認藥劑：' + harvest.missing.join('、'));
+    if (harvest.date) lines.push('已知部分推算：' + formatSlashDate(harvest.date));
+  } else if (harvest.date) {
+    lines.push('', `🧺 參考最早採收日：${formatSlashDate(harvest.date)}`);
     lines.push('（依本機施作紀錄推算，僅供參考）');
   } else {
     lines.push('', '🧺 參考最早採收日：無法推算，請查閱產品標示');

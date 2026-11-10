@@ -169,7 +169,7 @@ describe('使用範圍未知狀態的安全文案', () => {
 
 describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
   const html = settingsViewHtml({
-    version: 'v1.5.3',
+    version: 'v1.6.0',
     aphiaUrl: 'https://example.com/aphia',
     lineUrl: 'https://example.com/line',
     fieldCount: 2,
@@ -200,18 +200,18 @@ describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
 
   it('版本摘要只顯示最新三個版本', () => {
     assert.deepEqual(html.match(/<b>v\d+\.\d+\.\d+(?:・這一版)?<\/b>/g), [
-      '<b>v1.5.3・這一版</b>',
+      '<b>v1.6.0・這一版</b>',
+      '<b>v1.5.3</b>',
       '<b>v1.5.2</b>',
-      '<b>v1.5.1</b>',
     ]);
-    assert.ok(!html.includes('v1.5.0'));
+    assert.ok(!html.includes('v1.5.1'));
   });
 
   it('在設定頁最下方顯示動態版本與年份的品牌署名', () => {
     assert.equal((html.match(/class="colophon"/g) || []).length, 1);
     assert.ok(html.includes('PRO-BRO AVOCADO'));
     assert.ok(html.includes('A field tool for growers, built on a family avocado farm in Nantou, Taiwan.'));
-    assert.ok(html.includes(`v1.5.3 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
+    assert.ok(html.includes(`v1.6.0 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
     assert.ok(html.indexOf('買杯咖啡支持') < html.indexOf('class="colophon"'));
   });
 });
@@ -339,8 +339,8 @@ describe('自訂配方／資材施作流程', () => {
       filterFieldId: '',
       fields: [],
     });
-    assert.ok(html.includes('data-action="open-custom-record-form"'));
-    assert.ok(html.includes('完全沒有使用農業部藥劑'));
+    assert.ok(html.includes('data-action="new-record"'));
+    assert.ok(html.includes('記一筆施作'));
   });
 
   it('表單可從本機土地帶入，且不顯示官方藥劑區塊', () => {
@@ -349,7 +349,7 @@ describe('自訂配方／資材施作流程', () => {
       [{ name: '自製菌液', unit: '毫升' }],
       [{ id: 'field-1', name: '測試園', crop: '酪梨', area: 1, unit: 'jia' }],
     );
-    assert.ok(html.includes('記錄自訂配方／資材'));
+    assert.ok(html.includes('記一筆施作'));
     assert.ok(html.includes('data-field="record-field-preset"'));
     assert.ok(html.includes('<option value="field-1" selected>測試園</option>'));
     assert.ok(!html.includes('<h3>💊 本次用藥</h3>'));

@@ -15,8 +15,13 @@ import {
   isCustomRecord,
   modeLabel,
   monthGrid,
+  matchingRecordRanges,
+  missingHarvestDrugs,
   parseDays,
+  recordHarvest,
+  recordWater,
   todayKey,
+  verifiedRecordRange,
 } from './records.js';
 
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -619,16 +624,16 @@ export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
-function pendingHtml(pending) {
-  if (!pending.length) return '';
+function pendingHtml(countdowns, pending) {
+  if (!countdowns.length && !pending.length) return '';
 
-  const rows = pending
+  const rows = countdowns
     .map(
       (p) => `
       <div class="pending-row">
         <div>
           <strong>${esc(p.fieldName || '未命名')}</strong>
-          <span>${esc(p.crop || '—')}・${esc(formatSlashDate(p.from))} 施作</span>
+          <span>${esc(p.crop || '—')} · 參考採收日 ${esc(formatSlashDate(p.harvestDate))}</span>
         </div>
         <b>還有 ${p.daysLeft} 天</b>
       </div>`,
@@ -637,7 +642,12 @@ function pendingHtml(pending) {
 
   return `
     <div class="pending-card">
-      <b>⏳ 還沒到參考採收日</b>
+      <h3>採收提醒</h3>
+      ${pending.map((app) => `<button type="button" class="record-row harvest-review" data-action="open-record" data-id="${esc(app.id)}">
+        <strong>待確認 · ${esc(app.fieldName)} · ${esc(formatSlashDate(app.date))}</strong>
+        <span>${esc(app.missing.join('、'))}${app.harvestDate ? ` · 已知部分推算 ${esc(formatSlashDate(app.harvestDate))}` : ''}</span>
+      </button>`).join('')}
+      ${rows ? '<b>還沒到參考採收日</b>' : ''}
       ${rows}
       <p>依本機施作紀錄推算。漏記的施藥不會被算進來，實際採收仍請自行確認。</p>
     </div>`;
@@ -660,12 +670,19 @@ function recordRowHtml(app) {
     </button>`;
 }
 
-export function recordsViewHtml({ month, applications, selected, pending, filterFieldId, fields }) {
+export function recordsViewHtml({ month, applications, selected, pending = [], countdowns = [], filterFieldId, fields,
+  draftAvailable = false, query = '', from = '', to = '' }) {
   const year = month.getFullYear();
   const monthIndex = month.getMonth();
   const today = todayKey();
 
-  const filtered = filterFieldId ? applications.filter((a) => a.fieldId === filterFieldId) : applications;
+  const keyword = query.trim().toLowerCase();
+  const searching = Boolean(keyword || from || to);
+  const filtered = applications.filter((app) =>
+    (!filterFieldId || app.fieldId === filterFieldId) &&
+    (!from || app.date >= from) && (!to || app.date <= to) &&
+    (!keyword || [...(app.drugs || []), ...(app.additives || [])].some((item) =>
+      [item.name, item.ingredient, item.license].some((value) => String(value ?? '').toLowerCase().includes(keyword)))));
 
   const countByDate = new Map();
   for (const app of filtered) countByDate.set(app.date, (countByDate.get(app.date) || 0) + 1);
@@ -696,10 +713,10 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
       ? dayRecords.map(recordRowHtml).join('')
       : `<div class="empty">${esc(formatDisplayDate(selected))}沒有施作紀錄。</div>`
     : filtered.length
-      ? filtered.slice(0, 12).map(recordRowHtml).join('')
+      ? (searching ? filtered : filtered.slice(0, 12)).map(recordRowHtml).join('')
       : `<div class="welcome-card">
-           <b>🌱 還沒有任何紀錄</b>
-           <p>有使用農業部藥劑時從「用量試算」完成紀錄；只有自訂配方或資材時，使用上方按鈕直接新增。</p>
+           <b>${searching ? '找不到相符紀錄' : '🌱 還沒有任何紀錄'}</b>
+           <p>${searching ? '試著調整藥名或日期範圍。' : '點「記一筆施作」開始記錄用藥、資材或自訂配方。'}</p>
          </div>`;
 
   return `
@@ -710,12 +727,12 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
         <p>只存在這支手機，不會上傳到任何地方。記得偶爾到設定頁匯出備份 💾</p>
       </div>
 
-      ${pendingHtml(pending)}
-
-      <button type="button" class="record-cta custom-record-cta" data-action="open-custom-record-form">
-        ＋ 記錄自訂配方／資材
+      <button type="button" class="record-cta custom-record-cta" data-action="${draftAvailable ? 'resume-record' : 'new-record'}">
+        ${draftAvailable ? '繼續上次紀錄' : '＋ 記一筆施作'}
       </button>
-      <p class="offline-note">完全沒有使用農業部藥劑時，從這裡直接記下實際配方、用量與用水。</p>
+      ${draftAvailable ? '<button type="button" class="ghost-btn" data-action="discard-record-draft">捨棄草稿</button>' : ''}
+
+      ${pendingHtml(countdowns, pending)}
 
       ${fields.length
         ? `<label class="field">
@@ -726,6 +743,17 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
              </select>
            </label>`
         : ''}
+
+      <details class="favorites-panel"${searching ? ' open' : ''}>
+        <summary class="favorites-trigger"><strong>搜尋施作紀錄</strong></summary>
+        <div class="favorites-content">
+          <label class="field"><span>藥名、資材或許可證</span><input type="search" data-field="records-query" value="${esc(query)}" /></label>
+          <div class="two-fields">
+            <label class="field"><span>開始日期</span><input type="date" data-field="records-from" value="${esc(from)}" /></label>
+            <label class="field"><span>結束日期</span><input type="date" data-field="records-to" value="${esc(to)}" /></label>
+          </div>
+        </div>
+      </details>
 
       <div class="calendar">
         <div class="cal-head">
@@ -755,7 +783,15 @@ export function recordsViewHtml({ month, applications, selected, pending, filter
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.5.3・這一版</b>
+      <b>v1.6.0・這一版</b>
+      <ul>
+        <li>施作紀錄統一新增入口，可記藥劑、資材或一起施用，並自動保存草稿。</li>
+        <li>土地可設定用水量、常用組合，新增時可帶入這塊地的歷史用藥。</li>
+        <li>採收提醒標出待確認的藥劑，並依本次作物核對用途。</li>
+        <li>支援分桶用水、搜尋紀錄及備份常用項目，底部視窗可下拉關閉。</li>
+      </ul>
+
+      <b>v1.5.3</b>
       <ul>
         <li>藥劑查詢與用量試算新增一致的常用藥劑卡片，顯示釘選數量，可直接查看詳情或移除常用。</li>
       </ul>
@@ -767,11 +803,6 @@ function releaseLogHtml() {
         <li>網站檔案依程式、樣式、圖示、資料與測試分類，方便整包上傳維護。</li>
       </ul>
 
-      <b>v1.5.1</b>
-      <ul>
-        <li>修正安全採收期為純數字時無法讀取的問題，同桶多種藥劑可依最長的有效天數推算參考最早採收日。</li>
-        <li>已儲存但顯示「無法推算」的紀錄，請開啟「編輯」再儲存，即可依原紀錄中的安全採收期重新計算；缺少天數的藥劑仍需查閱產品標示。</li>
-      </ul>
 
     </div>`;
 }
@@ -813,7 +844,7 @@ function settingDisclosureHtml({ title, hint, content }) {
     </details>`;
 }
 
-export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCount, persisted, dbError }) {
+export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCount, persisted, dbError, lastBackup }) {
   return `
     <section class="view">
       <div class="page-title">
@@ -835,7 +866,7 @@ export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCo
       </button>
 
       <button class="setting-row" data-action="export-backup">
-        <span><b>💾 匯出備份</b><small>${appCount} 筆施作紀錄，存成一個檔案</small></span><i>›</i>
+        <span><b>💾 匯出備份</b><small>${appCount} 筆施作紀錄、土地與常用項目 · ${lastBackup ? `上次匯出 ${esc(formatSlashDate(lastBackup))}` : '尚無匯出記錄'}</small></span><i>›</i>
       </button>
 
       <button class="setting-row" data-action="import-backup">
@@ -930,6 +961,7 @@ export function detailHtml({ drug, ranges, loading, crop, shown, pinned, rangeSt
     title: drugTitle(drug),
     closeAction: 'close-overlay',
     body: `
+      <h3 class="sheet-subheading">登記資料</h3>
       <div class="detail-grid">
         <div><span>普通名稱</span><b>${esc(text(drug['中文名稱']) || '—')}</b></div>
         <div><span>分類</span><b>${esc(text(drug['農藥分類中文意義']) || '—')}</b></div>
@@ -963,8 +995,8 @@ export function detailHtml({ drug, ranges, loading, crop, shown, pinned, rangeSt
 function sheetHtml({ eyebrow, title, body, closeAction }) {
   return `
     <div class="sheet-backdrop" data-action="${closeAction}">
-      <section class="sheet" role="dialog" aria-modal="true">
-        <div class="sheet-handle"></div>
+      <section class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="sheet-grip" aria-hidden="true"><div class="sheet-handle"></div></div>
         <div class="sheet-head">
           <div><span class="eyebrow">${esc(eyebrow)}</span><h2>${esc(title)}</h2></div>
           <button class="icon-btn" data-action="${closeAction}" aria-label="關閉">×</button>
@@ -986,7 +1018,7 @@ export function fieldsSheetHtml(fields) {
         <article class="field-row">
           <div>
             <strong>${esc(f.name)}</strong>
-            <span>${esc(f.area)} ${esc(AREA_UNIT_LABEL[f.unit] || '')}${f.crop ? `・${esc(f.crop)}` : ''}</span>
+            <span>${esc(f.area)} ${esc(AREA_UNIT_LABEL[f.unit] || '')}${f.crop ? `・${esc(f.crop)}` : ''}${f.water ? `・${esc(f.water)} 公升` : ''}</span>
           </div>
           <div class="field-row-actions">
             <button type="button" data-action="edit-field" data-id="${esc(f.id)}">編輯</button>
@@ -1011,7 +1043,12 @@ export function fieldsSheetHtml(fields) {
   });
 }
 
-export function fieldFormHtml(form) {
+export function fieldFormHtml(form, fields = [], favorites = []) {
+  const templates = form.templates || [];
+  const editing = form.templateEditor;
+  const otherTemplates = fields.filter((field) => field.id !== form.id)
+    .flatMap((field) => (field.templates || []).map((item) =>
+      `<option value="${esc(item.id)}">${esc(field.name)} · ${esc(item.name)}</option>`));
   return sheetHtml({
     eyebrow: form.id ? '編輯土地' : '新增土地',
     title: form.id ? form.name || '編輯土地' : '新增一塊地',
@@ -1040,9 +1077,50 @@ export function fieldFormHtml(form) {
         <input data-field="field-crop" value="${esc(form.crop)}" placeholder="例如：酪梨" />
       </label>
 
+      <label class="field">
+        <span>用水量（公升，可留空）</span>
+        <input inputmode="decimal" data-field="field-water" value="${esc(form.water)}" />
+      </label>
+
+      <h3 class="sheet-subheading">這塊地的常用組合</h3>
+      <p class="legal-note">從已儲存的施作紀錄選「另存為常用組合」。</p>
+      <button type="button" class="ghost-btn" data-action="field-template-edit">＋ 新增常用組合</button>
+      ${templates.map((item) => `<div class="field-row">
+        <div><strong>${esc(item.name)}</strong><span>${esc([...item.drugs, ...item.additives].map((entry) => entry.name).join('、'))}</span></div>
+        <div class="field-row-actions">
+          <button type="button" data-action="field-template-edit" data-id="${esc(item.id)}">編輯</button>
+          <button type="button" class="danger" data-action="field-template-remove" data-id="${esc(item.id)}">移除</button>
+        </div>
+      </div>`).join('')}
+      ${otherTemplates.length ? `<label class="field"><span>從其他土地複製</span>
+        <select data-field="field-template-copy"><option value="">選擇常用組合…</option>${otherTemplates.join('')}</select>
+      </label>` : ''}
+      ${editing ? `<section class="favorites-panel template-editor">
+        <h3>編輯常用組合</h3>
+        <label class="field"><span>名稱</span><input data-field="template-name" value="${esc(editing.name)}" /></label>
+        <label class="field"><span>施作方式</span><select data-field="template-mode">
+          <option value="tank">同桶施用</option>
+          <option value="separate"${editing.mode === 'separate' ? ' selected' : ''}>分開施用</option>
+        </select></label>
+        ${favorites.length ? `<label class="field"><span>加入已釘選藥劑</span><select data-field="template-add-drug">
+          <option value="">選擇藥劑…</option>${favorites.map((favorite) => `<option value="${esc(favorite.key)}">${esc(favorite.name)}</option>`).join('')}
+        </select></label>` : ''}
+        ${editing.drugs.map((drug, index) => `<div class="field-row">
+          <strong>${esc(drug.name)}</strong>
+          <button type="button" class="remove" data-action="template-remove-drug" data-idx="${index}">移除</button>
+        </div>`).join('')}
+        ${editing.additives.map((item, index) => `<div class="field-row template-additive">
+          <label class="field"><span>資材名稱</span><input data-field="template-additive-name" data-idx="${index}" value="${esc(item.name)}" /></label>
+          <label class="field"><span>單位</span><input data-field="template-additive-unit" data-idx="${index}" value="${esc(item.unit)}" /></label>
+          <button type="button" class="remove" data-action="template-remove-additive" data-idx="${index}">移除</button>
+        </div>`).join('')}
+        <button type="button" class="ghost-btn" data-action="template-add-additive">＋ 新增資材</button>
+        <button type="button" class="record-cta" data-action="template-apply-edit">完成編輯</button>
+        <button type="button" class="ghost-btn" data-action="template-cancel-edit">取消編輯</button>
+      </section>` : ''}
       ${form.error ? `<p class="field-error">${esc(form.error)}</p>` : ''}
 
-      <button class="record-cta" type="button" data-action="save-field">儲存</button>
+      <button class="record-cta" type="button" data-action="save-field"${editing ? ' disabled' : ''}>儲存土地</button>
       <button class="ghost-btn" type="button" data-action="open-fields">取消</button>`,
   });
 }
@@ -1088,10 +1166,10 @@ const additiveUnitOptions = (current) => {
 export function recordGuidanceHtml(draft, drug) {
   const area = Number(draft.area) || 0;
   const areaHa = toHectares(area, draft.unit);
-  const water = draft.mode === 'separate' ? Number(drug.water) || 0 : Number(draft.water) || 0;
+  const water = draft.mode === 'separate' ? Number(drug.water) || 0 : Number(recordWater(draft)) || 0;
   const check = assessApplication(
-    drug.dosePerHa,
-    drug.dilution,
+    drug.rangeVerified === false ? '' : drug.dosePerHa,
+    drug.rangeVerified === false ? '' : drug.dilution,
     areaHa,
     water,
     drug.amount,
@@ -1158,7 +1236,7 @@ export function recordGuidanceHtml(draft, drug) {
 
 /** 自訂配方只算實際濃度，不產生任何官方建議。 */
 export function customDilutionHtml(draft, additive) {
-  const actual = actualDilution(additive.amount, additive.unit, draft.water);
+  const actual = actualDilution(additive.amount, additive.unit, recordWater(draft));
   return `<div class="dose-reference secondary">
     <span>依本次用量與總用水反推</span>
     <strong>${actual ? `實際約 ${actual.toLocaleString('en-US')} 倍` : '填完用量與用水後顯示'}</strong>
@@ -1166,10 +1244,60 @@ export function customDilutionHtml(draft, additive) {
   </div>`;
 }
 
-export function recordFormHtml(draft, additivePresets = [], fields = []) {
+export function recordReviewHtml(draft) {
+  const items = [...draft.drugs, ...draft.additives].filter((item) => item.name?.trim());
+  const water = draft.mode === 'separate'
+    ? draft.drugs.map((item) => item.name + ' ' + (item.water ? item.water + ' 公升' : '待填')).join('、')
+    : recordWater(draft) ? recordWater(draft) + ' 公升' : '待填';
+  return `<h3 class="sheet-subheading">儲存前核對</h3>
+    <dl class="check-rows">
+      <div><dt>施作面積</dt><dd>${draft.area ? esc(areaLabel(draft)) : '待填'}</dd></div>
+      <div><dt>實際用水</dt><dd>${esc(water)}</dd></div>
+      ${items.map((item) => `<div><dt>${esc(item.name)}</dt><dd>${item.amount ? esc(item.amount + ' ' + (item.amountUnit || item.unit || '')) : '待填'}</dd></div>`).join('')}
+    </dl>`;
+}
+
+export function recordFormHtml(draft, additivePresets = [], fields = [], options = {}) {
   const drugs = draft.drugs || [];
   const additives = draft.additives || [];
-  const customOnly = draft.recordType === 'custom' || !drugs.length;
+  const customOnly = !drugs.length;
+  const buckets = draft.buckets || [];
+  const totalWater = recordWater(draft);
+  const choice = (label, field, items) => items.length ? `<label class="field"><span>${label}</span>
+    <select data-field="${field}"><option value="">請選擇…</option>${items.join('')}</select>
+  </label>` : '';
+  const history = (options.history || []).map((app) => ({
+    id: app.id,
+    label: formatSlashDate(app.date) + ' · ' + [...(app.drugs || []), ...(app.additives || [])].map((item) => item.name).join('、'),
+  }));
+  const historyQuery = String(options.historyQuery || '').trim().toLowerCase().replace(/-/g, '/');
+  const historyOptions = history.filter((item) => item.label.toLowerCase().includes(historyQuery)).map((item) =>
+    `<option value="${esc(item.id)}">${esc(item.label)}</option>`);
+  const quickAdd = `
+    <div class="section-row"><h3>藥劑與配方</h3></div>
+    ${choice('這塊地的常用組合', 'record-template', (options.templates || []).map((item) =>
+      `<option value="${esc(item.id)}">${esc(item.name)}</option>`))}
+    ${history.length ? `<details class="favorites-panel"${historyQuery ? ' open' : ''}>
+      <summary class="favorites-trigger"><strong>從這塊地的歷史帶入</strong></summary>
+      <div class="favorites-content">
+        <label class="field"><span>查找日期、藥名或資材</span><input type="search" data-field="record-history-query" value="${esc(options.historyQuery)}" placeholder="例如：2026/11 或藥名" /></label>
+        ${historyOptions.length ? choice('選擇一筆紀錄', 'record-history', historyOptions) : '<p>找不到相符紀錄</p>'}
+      </div>
+    </details>` : ''}
+    ${choice('加入常用藥劑', 'record-drug-quick', [...(options.pinned || []), ...(options.recent || [])].map((item) =>
+      `<option value="${esc(item.key)}">${esc(item.name)}</option>`))}
+    <details class="favorites-panel"${options.query || options.searching || options.message ? ' open' : ''}>
+      <summary class="favorites-trigger"><strong>查詢並加入藥劑</strong></summary>
+      <div class="favorites-content">
+        <div class="search-line">
+          <input type="search" data-field="record-query" value="${esc(options.query)}" aria-label="藥劑名稱或代號" placeholder="藥劑名稱或代號" />
+          <button type="button" data-action="record-search"${options.searching ? ' disabled' : ''}>${options.searching ? '查詢中' : '查詢'}</button>
+        </div>
+        ${options.message ? `<p>${esc(options.message)}</p>` : ''}
+        ${(options.results || []).map((drug, i) => `<button class="record-row" type="button" data-action="record-pick-drug" data-index="${i}">
+          <strong>${esc(drugTitle(drug))}</strong><span>${esc(drugSubtitle(drug))} · ${esc(license(drug))}</span></button>`).join('')}
+      </div>
+    </details>`;
 
   const fieldPicker = fields.length
     ? `<label class="field">
@@ -1197,13 +1325,28 @@ export function recordFormHtml(draft, additivePresets = [], fields = []) {
 
   const drugRows = drugs
     .map(
-      (d, i) => `
+      (d, i) => {
+        const ranges = matchingRecordRanges(d.ranges || [], draft.crop);
+        return `
       <article class="record-drug">
         <div class="record-drug-head">
           <strong>${esc(d.name)}</strong>
-          ${drugs.length > 1 ? `<button type="button" class="remove" data-action="record-drug-remove" data-idx="${i}">－ 移除</button>` : ''}
+          <button type="button" class="remove" data-action="record-drug-remove" data-idx="${i}">－ 移除</button>
         </div>
-        <span class="record-drug-sub">${esc(d.target || '—')}${d.dilution ? `・標示稀釋 ${esc(d.dilution)}` : ''}</span>
+        <span class="record-drug-sub">${d.rangeVerified === false ? '用途待確認' : esc(d.target || '—')}${d.rangeVerified !== false && d.dilution ? `・標示稀釋 ${esc(d.dilution)}` : ''}</span>
+        ${ranges.length > 1 ? `<label class="field"><span>選擇本次防治用途</span>
+          <select data-field="record-range" data-idx="${i}">
+            <option value="">尚未選擇</option>
+            ${ranges.map((range, index) => `<option value="${index}"${d.rangeVerified &&
+              text(range['病蟲害名稱']) === d.target && text(range['安全採收期']) === d.phi &&
+              text(range['每公頃使用用藥量']) === d.dosePerHa && text(range['稀釋倍數']) === d.dilution ? ' selected' : ''}>
+              ${esc(text(range['病蟲害名稱']))} · ${esc(text(range['稀釋倍數']) || '未列稀釋倍數')} · 採收期 ${esc(text(range['安全採收期']) || '未提供')}
+            </option>`).join('')}
+          </select>
+        </label>` : ''}
+        ${!d.rangeVerified && !ranges.length ? `<button type="button" class="ghost-btn" data-action="record-recheck" data-idx="${i}"${d.checking ? ' disabled' : ''}>${d.checking ? '比對中…' : '重新比對作物用途'}</button>` : ''}
+        ${d.rangeStatus === 'failed' ? '<p class="legal-note">目前無法取得這支藥的使用範圍，可稍後再比對。</p>' : ''}
+        ${d.rangeStatus === 'ok' && !ranges.length && draft.crop ? '<p class="legal-note">找不到與本次作物名稱相符的用途。</p>' : ''}
 
         <div class="record-guidance" data-record-guidance="${i}" aria-live="polite">
           ${recordGuidanceHtml(draft, d)}
@@ -1230,10 +1373,11 @@ export function recordFormHtml(draft, additivePresets = [], fields = []) {
           : ''}
 
         <dl class="check-rows">
-          <div><dt>安全採收期</dt><dd>${esc(d.phi || '未提供')}</dd></div>
-          <div><dt>施藥間隔</dt><dd>${esc(d.interval || '未提供')}</dd></div>
+          <div><dt>安全採收期</dt><dd>${esc(d.rangeVerified === false ? '待確認' : d.phi || '未提供')}</dd></div>
+          <div><dt>施藥間隔</dt><dd>${esc(d.rangeVerified === false ? '待確認' : d.interval || '未提供')}</dd></div>
         </dl>
-      </article>`,
+      </article>`;
+      },
     )
     .join('');
 
@@ -1274,18 +1418,24 @@ export function recordFormHtml(draft, additivePresets = [], fields = []) {
     )
     .join('');
 
+  const missing = missingHarvestDrugs(drugs);
   const harvest = customOnly
     ? `<div class="verdict warn">
          <span class="verdict-label">安全採收期</span>
          <strong>沒有官方資料</strong>
          <span class="verdict-sub">自訂配方不參與官方採收日推算；若含農藥成分，請依各產品標示中最長的天數。</span>
        </div>`
+    : missing.length
+    ? `<div class="verdict warn">
+         <span class="verdict-label">採收期待確認</span>
+         <strong>${esc(missing.join('、'))}</strong>
+         ${draft.harvestDate ? `<p>已知部分推算：${esc(formatSlashDate(draft.harvestDate))}</p>` : ''}
+       </div>`
     : draft.harvestDate
     ? `<div class="verdict ok">
          <span class="verdict-label">參考最早採收日</span>
          <strong>${esc(formatSlashDate(draft.harvestDate))}</strong>
          <span class="verdict-sub">施作日加上最長的安全採收期 ${draft.harvestDays} 天</span>
-         ${draft.harvestUnknown ? '<p>其中有藥劑沒有標示天數，這個日期只涵蓋看得懂的部分。</p>' : ''}
        </div>`
     : `<div class="verdict warn">
          <span class="verdict-label">無法推算採收日</span>
@@ -1310,10 +1460,11 @@ export function recordFormHtml(draft, additivePresets = [], fields = []) {
     : '';
 
   return sheetHtml({
-    eyebrow: draft.id ? (customOnly ? '編輯自訂紀錄' : '編輯紀錄') : (customOnly ? '自訂施作' : '完成施作'),
-    title: draft.id ? '編輯施作紀錄' : (customOnly ? '記錄自訂配方／資材' : '記下這次施作'),
+    eyebrow: draft.createdAt ? '編輯紀錄' : '新增施作',
+    title: draft.createdAt ? '編輯施作紀錄' : '記一筆施作',
     closeAction: 'close-overlay',
     body: `
+      <p class="soft-note">填寫內容會保存在這台裝置的草稿，稍後可以接著記。</p>
       <p class="legal-note">${customOnly
         ? '這份紀錄不會套用農業部藥劑建議。請只填實際使用的配方、用量與用水；若配方含農藥成分，仍須逐一核對產品標示。'
         : '面積換算只當作標示參考，不會自動寫進實際用量。保存的是你親自確認過的施作數字。'}</p>
@@ -1353,14 +1504,26 @@ export function recordFormHtml(draft, additivePresets = [], fields = []) {
         <input data-field="record-crop" value="${esc(draft.crop)}" placeholder="例如：酪梨" />
       </label>
 
+      ${quickAdd}
       ${modeBlock}
 
       ${customOnly || draft.mode === 'tank'
         ? `<label class="field">
              <span>實際總用水量（公升）</span>
-             <input inputmode="decimal" data-field="record-water" value="${esc(draft.water)}" />
+             <input inputmode="decimal" data-field="record-water" value="${esc(totalWater)}"${buckets.length ? ' readonly' : ''} />
            </label>`
         : ''}
+      ${customOnly || draft.mode === 'tank' ? `<details class="favorites-panel"${buckets.length ? ' open' : ''}>
+        <summary class="favorites-trigger"><strong>分桶記錄（選填）</strong></summary>
+        <div class="favorites-content">
+          <p class="legal-note">填各桶實際使用的水量，系統會加總。</p>
+          ${buckets.map((water, i) => `<div class="field-row">
+            <label class="field"><span>第 ${i + 1} 桶（公升）</span><input inputmode="decimal" data-field="record-bucket-water" data-idx="${i}" value="${esc(water)}" /></label>
+            <button type="button" class="remove" data-action="record-bucket-remove" data-idx="${i}">移除</button>
+          </div>`).join('')}
+          <button type="button" class="ghost-btn" data-action="record-bucket-add">＋ 新增一桶</button>
+        </div>
+      </details>` : ''}
 
       ${drugSection}
 
@@ -1380,10 +1543,11 @@ export function recordFormHtml(draft, additivePresets = [], fields = []) {
 
       ${harvest}
 
+      <div data-record-review>${recordReviewHtml({ ...draft, drugs, additives })}</div>
       ${draft.error ? `<p class="field-error">${esc(draft.error)}</p>` : ''}
 
-      <button class="record-cta" type="button" data-action="save-record">${draft.id ? '儲存修改' : '確認並保存到本機'}</button>
-      <button class="ghost-btn" type="button" data-action="close-overlay">取消</button>`,
+      <button class="record-cta" type="button" data-action="save-record"${options.saving ? ' disabled' : ''}>${options.saving ? '儲存中…' : draft.createdAt ? '儲存修改' : '確認並保存到本機'}</button>
+      <button class="ghost-btn" type="button" data-action="close-overlay">稍後繼續</button>`,
   });
 }
 
@@ -1392,6 +1556,7 @@ export function recordFormHtml(draft, additivePresets = [], fields = []) {
 /* ------------------------------------------------------------------ */
 
 export function recordDetailHtml(app, confirmDelete) {
+  const harvestInfo = recordHarvest(app);
   const drugList = app.drugs || [];
   const additiveList = app.additives || [];
   const customOnly = isCustomRecord(app);
@@ -1400,20 +1565,21 @@ export function recordDetailHtml(app, confirmDelete) {
       // 實際稀釋倍數由那天真正倒進去的藥量與水量反推，不是抄官方的建議值。
       const water = app.mode === 'separate' ? d.water : app.water;
       const actual = actualDilution(d.amount, d.amountUnit, water);
-      const phiDays = parseDays(d.phi);
+      const verified = verifiedRecordRange(d, app.crop);
+      const phiDays = verified ? parseDays(d.phi) : null;
       const harvest = phiDays === null ? null : addDays(app.date, phiDays);
 
       return `
       <article class="range-card">
         <div><strong>${i + 1}. ${esc(d.name)}</strong><span>${esc(d.amount)} ${esc(d.amountUnit)}</span></div>
         <dl>
-          <div><dt>防治對象</dt><dd>${esc(d.target || '—')}</dd></div>
+          <div><dt>防治對象</dt><dd>${verified ? esc(d.target || '—') : '待確認'}</dd></div>
           <div><dt>實際稀釋倍數</dt><dd>${actual ? `約 ${actual.toLocaleString('en-US')} 倍` : '無法計算'}</dd></div>
-          <div><dt>建議稀釋倍數</dt><dd>${esc(d.dilution || '—')}</dd></div>
+          <div><dt>建議稀釋倍數</dt><dd>${verified ? esc(d.dilution || '—') : '待確認'}</dd></div>
           <div><dt>用水量</dt><dd>${water ? `${esc(water)} 公升` : '—'}</dd></div>
-          <div><dt>安全採收期</dt><dd>${esc(d.phi || '—')}</dd></div>
-          <div><dt>施藥間隔</dt><dd>${esc(d.interval || '—')}</dd></div>
-          <div class="wide"><dt>這支藥的可採收日</dt><dd>${harvest ? esc(formatSlashDate(harvest)) : '無法推算，請查產品標示'}</dd></div>
+          <div><dt>安全採收期</dt><dd>${verified ? esc(d.phi || '—') : '待確認'}</dd></div>
+          <div><dt>施藥間隔</dt><dd>${verified ? esc(d.interval || '—') : '待確認'}</dd></div>
+          <div class="wide"><dt>這支藥的參考採收日</dt><dd>${harvest ? esc(formatSlashDate(harvest)) : '待確認'}</dd></div>
         </dl>
       </article>`;
     })
@@ -1459,10 +1625,13 @@ export function recordDetailHtml(app, confirmDelete) {
         <div><span>施作方式</span><b>${esc(modeLabel(app.mode))}</b></div>
         <div><span>${app.mode === 'tank' ? '實際總用水' : '用水'}</span><b>${app.mode === 'tank' ? `${esc(app.water)} 公升` : '各自記錄'}</b></div>
         ${app.note ? `<div class="wide"><span>備註</span><b>${esc(app.note)}</b></div>` : ''}
-        <div class="wide"><span>${customOnly ? '安全採收期' : '參考最早採收日'}</span><b>${customOnly ? '無官方資料，無法推算' : (app.harvestDate ? esc(formatSlashDate(app.harvestDate)) : '無法推算')}</b></div>
+        ${app.buckets?.length ? `<div class="wide"><span>分桶用水量</span><b>${esc(app.buckets.join(' ＋ '))} 公升</b></div>` : ''}
+        <div class="wide"><span>${customOnly ? '安全採收期' : '參考最早採收日'}</span><b>${customOnly ? '無官方資料，無法推算' : harvestInfo.unknown ? '待確認' : harvestInfo.date ? esc(formatSlashDate(harvestInfo.date)) : '無法推算'}</b></div>
       </div>
 
       ${drugSection}
+      ${harvestInfo.unknown ? `<div class="verdict warn"><strong>待確認藥劑：${esc(harvestInfo.missing.join('、'))}</strong>
+        ${harvestInfo.date ? `<p>已知部分推算：${esc(formatSlashDate(harvestInfo.date))}</p>` : ''}</div>` : ''}
 
       ${additives}
 
@@ -1475,6 +1644,7 @@ export function recordDetailHtml(app, confirmDelete) {
 
       <div class="section-row"><h3>✏️ 這筆紀錄</h3><span></span></div>
       <button class="ghost-btn" type="button" data-action="edit-record" data-id="${esc(app.id)}">編輯</button>
+      ${app.fieldId ? `<button class="ghost-btn" type="button" data-action="save-record-template" data-id="${esc(app.id)}">另存為常用組合</button>` : ''}
       ${confirmDelete
         ? `<div class="safety-card">
              <b>🗑 確定要刪除嗎？</b>

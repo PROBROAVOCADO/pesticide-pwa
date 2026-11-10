@@ -7,6 +7,8 @@ import {
   daysBetween,
   googleCalendarUrl,
   harvestInfo,
+  harvestOverview,
+  matchingRecordRanges,
   monthGrid,
   parseDays,
   pendingHarvests,
@@ -180,8 +182,8 @@ const SAMPLE = {
   note: '下午完成',
   harvestDate: '2026-09-07',
   drugs: [
-    { name: '○○殺菌劑', amount: '260', amountUnit: '毫升', target: '炭疽病', dilution: '2000倍', phi: '12 天', interval: '10 天' },
-    { name: '○○殺蟲劑', amount: '175', amountUnit: '公克', target: '薊馬', dilution: '1500倍', phi: '9 天', interval: '7 天' },
+    { name: '○○殺菌劑', rangeVerified: true, cropOfficial: '酪梨', amount: '260', amountUnit: '毫升', target: '炭疽病', dilution: '2000倍', phi: '12 天', interval: '10 天' },
+    { name: '○○殺蟲劑', rangeVerified: true, cropOfficial: '酪梨', amount: '175', amountUnit: '公克', target: '薊馬', dilution: '1500倍', phi: '9 天', interval: '7 天' },
   ],
 };
 
@@ -201,6 +203,31 @@ const CUSTOM_SAMPLE = {
   drugs: [],
   additives: [{ name: '自製菌液', amount: '250', unit: '毫升', note: '葉面施用' }],
 };
+
+describe('採收提醒的作物與資料來源核對', () => {
+  it('混桶有缺資料時，已知日期列為部分推算，舊紀錄也會列在待確認', () => {
+    const unknown = { name: '缺資料藥劑', cropOfficial: '酪梨', rangeVerified: true };
+    const mixed = { ...SAMPLE, drugs: [SAMPLE.drugs[0], unknown] };
+    const legacy = { ...SAMPLE, id: 'legacy', drugs: [{ name: '舊藥劑', phi: '7' }] };
+    const result = harvestOverview([mixed, legacy], '2026-08-27');
+    assert.equal(result.countdowns.length, 0);
+    assert.deepEqual(result.pending.map((item) => [item.harvestDate, item.missing]), [
+      ['2026-09-07', ['缺資料藥劑']],
+      [null, ['舊藥劑']],
+    ]);
+    assert.match(buildRecordText(mixed), /已知部分推算：2026\/09\/07/);
+    assert.doesNotMatch(buildRecordText(mixed), /參考最早採收日/);
+  });
+
+  it('只使用相符作物，不因字串有重疊就帶入其他用途', () => {
+    const ranges = [{ 作物名稱: '蕃茄' }, { 作物名稱: '小番茄' }];
+    assert.deepEqual(matchingRecordRanges(ranges, '番 茄'), [ranges[0]]);
+    assert.deepEqual(matchingRecordRanges(ranges, ''), []);
+    const wrongCrop = { ...SAMPLE, crop: '小番茄' };
+    assert.doesNotMatch(buildRecordText(wrongCrop), /建議稀釋：2,000 倍/);
+    assert.deepEqual(harvestOverview([wrongCrop]).pending[0].missing, ['○○殺菌劑', '○○殺蟲劑']);
+  });
+});
 
 describe('buildRecordText：剪貼簿文字', () => {
   const textOut = buildRecordText(SAMPLE);
@@ -251,8 +278,8 @@ describe('buildRecordText：剪貼簿文字', () => {
   });
 
   it('沒有採收日時明講無法推算，不留白讓人誤會', () => {
-    const out = buildRecordText({ ...SAMPLE, harvestDate: null });
-    assert.ok(out.includes('無法推算'));
+    const out = buildRecordText({ ...SAMPLE, harvestDate: null, drugs: [{ name: '缺資料的藥' }] });
+    assert.ok(out.includes('待確認藥劑：缺資料的藥'));
   });
 
   it('分開施用時列出每種藥各自的用水量', () => {

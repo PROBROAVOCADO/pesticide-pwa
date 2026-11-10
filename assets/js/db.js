@@ -89,12 +89,8 @@ function run(storeName, mode, action) {
         const request = action(transaction.objectStore(storeName));
         transaction.onerror = () => reject(transaction.error);
         transaction.onabort = () => reject(transaction.error);
-        if (request) {
-          request.onsuccess = () => resolve(request.result);
-          request.onerror = () => reject(request.error);
-        } else {
-          transaction.oncomplete = () => resolve();
-        }
+        transaction.oncomplete = () => resolve(request?.result);
+        if (request) request.onerror = () => reject(request.error);
       }),
   );
 }
@@ -126,6 +122,8 @@ export function saveField(field) {
     area: String(field.area || '').trim(),
     unit: field.unit || 'fen',
     crop: String(field.crop || '').trim(),
+    water: String(field.water ?? '').trim(),
+    templates: Array.isArray(field.templates) ? field.templates : [],
     createdAt: field.createdAt || now,
     updatedAt: now,
   };
@@ -302,15 +300,16 @@ export async function storageEstimate() {
 export const BACKUP_FORMAT = 'field-meds-backup';
 export const BACKUP_VERSION = 1;
 
-/** 匯出土地與施作紀錄。藥劑快取不匯出 —— 那是可以重新抓回來的資料。 */
+/** 匯出土地、施作紀錄與釘選。土地內也包含用水量及常用組合。 */
 export async function exportBackup() {
-  const [fields, applications] = await Promise.all([listFields(), listApplications()]);
+  const [fields, applications, favorites] = await Promise.all([listFields(), listApplications(), listFavorites()]);
   return {
     format: BACKUP_FORMAT,
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
     fields,
     applications,
+    favorites,
   };
 }
 
@@ -326,20 +325,27 @@ export async function importBackup(data) {
     throw new Error('備份檔的內容不完整');
   }
 
-  let fields = 0;
-  let applications = 0;
+  const fields = data.fields.filter((field) => typeof field?.id === 'string' && field.id);
+  const applications = data.applications.filter((app) => typeof app?.id === 'string' && app.id);
+  const favorites = Array.isArray(data.favorites)
+    ? data.favorites.filter((favorite) => typeof favorite?.key === 'string' && favorite.key && favorite.drug)
+    : [];
+  const db = await openDb();
 
-  for (const field of data.fields) {
-    if (!field?.id) continue;
-    await put(STORE.fields, field);
-    fields += 1;
-  }
-
-  for (const app of data.applications) {
-    if (!app?.id) continue;
-    await put(STORE.applications, app);
-    applications += 1;
-  }
-
-  return { fields, applications };
+  await new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORE.fields, STORE.applications, STORE.favorites], 'readwrite');
+    transaction.oncomplete = resolve;
+    transaction.onabort = () => reject(transaction.error || new Error('匯入已取消'));
+    const fieldStore = transaction.objectStore(STORE.fields);
+    const applicationStore = transaction.objectStore(STORE.applications);
+    const favoriteStore = transaction.objectStore(STORE.favorites);
+    for (const field of fields) {
+      const request = fieldStore.get(field.id);
+      // 舊版備份沒有用水量或常用組合，合併時保留本機的這兩項。
+      request.onsuccess = () => fieldStore.put({ ...request.result, ...field });
+    }
+    for (const app of applications) applicationStore.put(app);
+    for (const favorite of favorites) favoriteStore.put(favorite);
+  });
+  return { fields: fields.length, applications: applications.length };
 }
