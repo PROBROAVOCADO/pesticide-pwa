@@ -557,6 +557,14 @@ function favoritesPanelHtml({ pinned = [], expanded = false } = {}) {
     </details>`;
 }
 
+export function favoritesSheetHtml(pinned) {
+  return sheetHtml({
+    eyebrow: '設定', title: '常用藥劑管理', closeAction: 'close-overlay',
+    body: `${favoritesPanelHtml({ pinned, expanded: true })}
+      <button type="button" class="ghost-btn" data-action="search-to-pin">到藥劑查詢新增常用</button>`,
+  });
+}
+
 export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
   const { crop, area, areaUnit, water, items, fieldId } = calc;
 
@@ -786,7 +794,9 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.1・這一版</b>
+      <b>v1.6.2・這一版</b>
+      <ul><li>可在施作草稿中編輯土地的常用組合，設定新增常用藥劑管理。</li></ul>
+      <b>v1.6.1</b>
       <ul><li>試算可加入或移除本次施作藥劑，施作紀錄可查土地名稱。</li><li>恢復依舊紀錄保存的採收天數，並整理施作表單的卡片層級。</li></ul>
       <b>v1.6.0</b>
       <ul>
@@ -794,11 +804,6 @@ function releaseLogHtml() {
         <li>土地可設定用水量、常用組合，新增時可帶入這塊地的歷史用藥。</li>
         <li>採收提醒標出待確認的藥劑，並依本次作物核對用途。</li>
         <li>支援分桶用水、搜尋紀錄及備份常用項目，底部視窗可下拉關閉。</li>
-      </ul>
-
-      <b>v1.5.3</b>
-      <ul>
-        <li>藥劑查詢與用量試算新增一致的常用藥劑卡片，顯示釘選數量，可直接查看詳情或移除常用。</li>
       </ul>
 
     </div>`;
@@ -841,7 +846,7 @@ function settingDisclosureHtml({ title, hint, content }) {
     </details>`;
 }
 
-export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCount, persisted, dbError, lastBackup }) {
+export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCount, persisted, dbError, lastBackup, favoriteCount = 0 }) {
   return `
     <section class="view">
       <div class="page-title">
@@ -860,6 +865,10 @@ export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCo
 
       <button class="setting-row" data-action="open-fields">
         <span><b>🗂 土地管理</b><small>目前 ${fieldCount} 筆</small></span><i>›</i>
+      </button>
+
+      <button class="setting-row" data-action="open-favorites">
+        <span><b>★ 常用藥劑管理</b><small>已釘選 ${favoriteCount} 支</small></span><i>›</i>
       </button>
 
       <button class="setting-row" data-action="export-backup">
@@ -1040,7 +1049,7 @@ export function fieldsSheetHtml(fields) {
   });
 }
 
-export function fieldFormHtml(form, fields = [], favorites = []) {
+export function fieldFormHtml(form, fields = [], favorites = [], templatesOnly = false) {
   const templates = form.templates || [];
   const editing = form.templateEditor;
   const otherTemplates = fields.filter((field) => field.id !== form.id)
@@ -1048,10 +1057,10 @@ export function fieldFormHtml(form, fields = [], favorites = []) {
       `<option value="${esc(item.id)}">${esc(field.name)} · ${esc(item.name)}</option>`));
   return sheetHtml({
     eyebrow: form.id ? '編輯土地' : '新增土地',
-    title: form.id ? form.name || '編輯土地' : '新增一塊地',
-    closeAction: 'open-fields',
+    title: templatesOnly ? form.name + '的常用組合' : form.id ? form.name || '編輯土地' : '新增一塊地',
+    closeAction: templatesOnly ? 'close-overlay' : 'open-fields',
     body: `
-      <label class="field">
+      ${templatesOnly ? '' : `<label class="field">
         <span>土地名稱</span>
         <input data-field="field-name" value="${esc(form.name)}" placeholder="例如：後山酪梨園" />
       </label>
@@ -1077,7 +1086,7 @@ export function fieldFormHtml(form, fields = [], favorites = []) {
       <label class="field">
         <span>用水量（公升，可留空）</span>
         <input inputmode="decimal" data-field="field-water" value="${esc(form.water)}" />
-      </label>
+      </label>`}
 
       <h3 class="sheet-subheading">這塊地的常用組合</h3>
       <p class="legal-note">從已儲存的施作紀錄選「另存為常用組合」。</p>
@@ -1117,8 +1126,8 @@ export function fieldFormHtml(form, fields = [], favorites = []) {
       </section>` : ''}
       ${form.error ? `<p class="field-error">${esc(form.error)}</p>` : ''}
 
-      <button class="record-cta" type="button" data-action="save-field"${editing ? ' disabled' : ''}>儲存土地</button>
-      <button class="ghost-btn" type="button" data-action="open-fields">取消</button>`,
+      <button class="record-cta" type="button" data-action="save-field"${editing ? ' disabled' : ''}>${templatesOnly ? '儲存組合' : '儲存土地'}</button>
+      <button class="ghost-btn" type="button" data-action="${templatesOnly ? 'close-overlay' : 'open-fields'}">取消</button>`,
   });
 }
 
@@ -1274,6 +1283,7 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
     <div class="section-row"><h3>藥劑與配方</h3></div>
     ${choice('這塊地的常用組合', 'record-template', (options.templates || []).map((item) =>
       `<option value="${esc(item.id)}">${esc(item.name)}</option>`))}
+    ${options.canEditTemplates ? '<button type="button" class="ghost-btn" data-action="edit-record-templates">編輯組合</button>' : ''}
     ${history.length ? `<details class="favorites-panel"${historyQuery ? ' open' : ''}>
       <summary class="favorites-trigger"><strong>從這塊地的歷史帶入</strong></summary>
       <div class="favorites-content">

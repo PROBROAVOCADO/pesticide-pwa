@@ -42,6 +42,7 @@ import {
   customDilutionHtml,
   detailHtml,
   fieldFormHtml,
+  favoritesSheetHtml,
   fieldsSheetHtml,
   itemOutputHtml,
   itemResultsHtml,
@@ -61,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.1';
+const VERSION = 'v1.6.2';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -200,6 +201,7 @@ const views = {
       aphiaUrl: APHIA_URL,
       lineUrl: LINE_URL,
       fieldCount: state.fields.length,
+      favoriteCount: state.favorites.length,
       appCount: state.applications.length,
       persisted: state.persisted,
       dbError: state.dbError,
@@ -250,13 +252,15 @@ function renderOverlay() {
   } else if (o.kind === 'fields') {
     overlayEl.innerHTML = fieldsSheetHtml(state.fields);
   } else if (o.kind === 'field-form') {
-    overlayEl.innerHTML = fieldFormHtml(o.form, state.fields, favoriteOptions().pinned);
+    overlayEl.innerHTML = fieldFormHtml(o.form, state.fields, favoriteOptions().pinned, Boolean(o.returnTo));
+  } else if (o.kind === 'favorites') {
+    overlayEl.innerHTML = favoritesSheetHtml(favoriteOptions().pinned);
   } else if (o.kind === 'record-form') {
     persistRecordDraft(o.draft);
     const field = state.fields.find((entry) => entry.id === o.draft.fieldId);
     const history = field ? state.applications.filter((app) => app.fieldId === field.id) : [];
     overlayEl.innerHTML = recordFormHtml(o.draft, recentAdditiveOptions(), state.fields, {
-      ...favoriteOptions(), templates: field?.templates || [], history,
+      ...favoriteOptions(), templates: field?.templates || [], history, canEditTemplates: Boolean(field),
       historyQuery: o.historyQuery || '',
       saving: o.saving,
     });
@@ -565,8 +569,8 @@ async function runMainSearch() {
   }
 }
 
-async function openDetail(drug) {
-  const detail = { kind: 'detail', drug, ranges: [], loading: true, crop: '' };
+async function openDetail(drug, returnTo = null) {
+  const detail = { kind: 'detail', drug, ranges: [], loading: true, crop: '', returnTo };
   state.overlay = detail;
   renderOverlay();
   const { ranges, status } = await rangesWithFallback(drug, { forceNetwork: true });
@@ -848,7 +852,9 @@ function pickField(id) {
 }
 
 async function saveFieldForm() {
-  const form = state.overlay.form;
+  const panel = state.overlay;
+  if (panel.saving || panel.form.templateEditor) return;
+  const form = panel.form;
   if (!form.name.trim()) {
     form.error = '請輸入土地名稱';
     renderOverlay();
@@ -866,13 +872,17 @@ async function saveFieldForm() {
     return;
   }
 
+  panel.saving = true;
   try {
-    await saveField(form);
+    const current = panel.returnTo && state.fields.find((field) => field.id === form.id);
+    if (panel.returnTo && !current) throw new Error('找不到這塊土地');
+    await saveField(current ? { ...current, templates: form.templates } : form);
     await reloadFields();
-    state.overlay = { kind: 'fields' };
-    renderOverlay();
+    state.overlay = panel.returnTo || { kind: 'fields' };
     render();
+    if (panel.returnTo) toast('已儲存常用組合');
   } catch (error) {
+    panel.saving = false;
     form.error = `存不進去：${error.message}`;
     renderOverlay();
   }
@@ -1356,6 +1366,11 @@ function closeOverlay() {
     // 關掉更新說明才算「看過」，中途離開下次還會再提醒一次。
     store.set('seen-version', VERSION);
   }
+  if (state.overlay?.returnTo) {
+    state.overlay = state.overlay.returnTo;
+    renderOverlay();
+    return;
+  }
   const wasRecord = state.overlay?.kind === 'record-form';
   state.overlay = null;
   if (wasRecord) render();
@@ -1410,6 +1425,23 @@ const ACTIONS = {
   },
 
   /* 土地 */
+  'edit-record-templates': () => {
+    const parent = state.overlay;
+    const field = state.fields.find((entry) => entry.id === parent?.draft?.fieldId);
+    if (!field) return;
+    state.overlay = { kind: 'field-form', form: { ...field, error: '' }, returnTo: parent };
+    renderOverlay();
+  },
+  'open-favorites': () => {
+    state.overlay = { kind: 'favorites' };
+    renderOverlay();
+  },
+  'search-to-pin': () => {
+    state.overlay = null;
+    state.tab = 'search';
+    render();
+    screenEl.querySelector('[data-field="search-query"]')?.focus();
+  },
   'open-fields': () => {
     state.overlay = { kind: 'fields' };
     renderOverlay();
@@ -1508,7 +1540,7 @@ const ACTIONS = {
       ? templates.map((item) => item.id === template.id ? template : item)
       : [...templates, template];
     form.templateEditor = null;
-    toast('請儲存土地以保存這次修改');
+    toast(state.overlay.returnTo ? '請點「儲存組合」保存修改' : '請儲存土地以保存這次修改');
     renderOverlay();
   },
   'field-template-remove': (d) => {
@@ -1597,7 +1629,7 @@ const ACTIONS = {
   'remove-pinned-favorite': (d) => removePinnedFavorite(d.key),
   'open-pinned-favorite': (d) => {
     const drug = state.favorites.find((favorite) => favorite.key === d.key)?.drug;
-    if (drug) openDetail(drug);
+    if (drug) openDetail(drug, state.overlay?.kind === 'favorites' ? state.overlay : null);
     else toast('這台裝置沒有保存這支藥的詳情，請查詢藥名');
   },
 
