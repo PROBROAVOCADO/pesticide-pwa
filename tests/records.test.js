@@ -205,15 +205,15 @@ const CUSTOM_SAMPLE = {
 };
 
 describe('採收提醒的作物與資料來源核對', () => {
-  it('混桶有缺資料時，已知日期列為部分推算，舊紀錄也會列在待確認', () => {
+  it('混桶缺資料列為部分推算，舊紀錄依保存的天數顯示', () => {
     const unknown = { name: '缺資料藥劑', cropOfficial: '酪梨', rangeVerified: true };
     const mixed = { ...SAMPLE, drugs: [SAMPLE.drugs[0], unknown] };
     const legacy = { ...SAMPLE, id: 'legacy', drugs: [{ name: '舊藥劑', phi: '7' }] };
     const result = harvestOverview([mixed, legacy], '2026-08-27');
-    assert.equal(result.countdowns.length, 0);
+    assert.equal(result.countdowns[0].harvestDate, '2026-09-02');
+    assert.match(buildRecordText(legacy), /依舊紀錄保存的標示推算/);
     assert.deepEqual(result.pending.map((item) => [item.harvestDate, item.missing]), [
       ['2026-09-07', ['缺資料藥劑']],
-      [null, ['舊藥劑']],
     ]);
     assert.match(buildRecordText(mixed), /已知部分推算：2026\/09\/07/);
     assert.doesNotMatch(buildRecordText(mixed), /參考最早採收日/);

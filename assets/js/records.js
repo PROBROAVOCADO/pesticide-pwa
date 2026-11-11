@@ -86,16 +86,18 @@ export function matchingRecordRanges(ranges, crop) {
 export const verifiedRecordRange = (drug, crop) =>
   drug.rangeVerified === true && matchingRecordRanges([{ 作物名稱: drug.cropOfficial }], crop).length > 0;
 
+export const legacyRecordRange = (drug) => drug.rangeVerified == null && !drug.cropOfficial;
+
 export const recordWater = (draft) => draft.mode === 'tank' && draft.buckets?.length
   ? draft.buckets.reduce((sum, value) => sum + (Number(value) || 0), 0)
   : draft.water;
 
 export function recordHarvest(app) {
   const drugs = app.drugs || [];
-  // 舊紀錄沒有保存用途的作物來源，須重新核對。
+  // 保留舊紀錄已存的天數；新版明確標記未核對的用途仍須確認。
   const verified = drugs.map((d) => ({
     ...d,
-    rangeVerified: verifiedRecordRange(d, app.crop),
+    rangeVerified: legacyRecordRange(d) || verifiedRecordRange(d, app.crop),
   }));
   return { ...harvestInfo(app.date, verified), missing: missingHarvestDrugs(verified) };
 }
@@ -231,7 +233,7 @@ export function buildRecordText(app) {
     drugs.forEach((drug, i) => {
       const water = app.mode === 'separate' ? drug.water : app.water;
       const actual = actualDilution(drug.amount, drug.amountUnit, water);
-      const verified = verifiedRecordRange(drug, app.crop);
+      const verified = legacyRecordRange(drug) || verifiedRecordRange(drug, app.crop);
 
       // 藥名獨立一列，避免與長藥名、用量和單位擠在一起。
       lines.push(`${i + 1}. ${drug.name || '未命名藥劑'}`);
@@ -279,7 +281,7 @@ export function buildRecordText(app) {
     if (harvest.date) lines.push('已知部分推算：' + formatSlashDate(harvest.date));
   } else if (harvest.date) {
     lines.push('', `🧺 參考最早採收日：${formatSlashDate(harvest.date)}`);
-    lines.push('（依本機施作紀錄推算，僅供參考）');
+    lines.push(drugs.some(legacyRecordRange) ? '（依舊紀錄保存的標示推算）' : '（依本機施作紀錄推算，僅供參考）');
   } else {
     lines.push('', '🧺 參考最早採收日：無法推算，請查閱產品標示');
   }

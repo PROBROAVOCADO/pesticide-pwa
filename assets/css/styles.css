@@ -353,3 +353,19 @@ input,select,textarea{font-family:inherit;font-size:16px;line-height:1.5}
 .template-additive .field { min-width: 0; margin-bottom: 0; }
 .template-additive .field:first-child { flex: 2; }
 .template-additive .field:nth-child(2) { flex: 1; }
+.record-date-filter{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.record-date-filter .field{min-width:0}
+.record-date-filter input{box-sizing:border-box;width:100%;min-width:0;height:46px}
+.records-page .pending-card,.records-page .calendar,.records-page .record-row{border-radius:14px}
+.records-page .record-row{border:1px solid var(--soft);background:var(--paper);margin-bottom:8px}
+.records-page .record-row.harvest-review{border-color:#d6b67d;background:#fff8e9}
+.record-panel{padding:16px;margin:0 0 16px;border:1px solid var(--soft);border-radius:16px;background:var(--paper)}
+.record-panel-context{background:#f6f3e9}
+.record-panel-water{background:#edf1e7}
+.record-panel-additives{background:#f7f1e8}
+.record-panel-review{background:#f1f4eb}
+.record-panel>h3,.record-panel>.section-row{margin:0 0 14px;color:var(--ink)}
+.record-panel .record-drug{border:1px dashed var(--rule);margin-top:12px}
+.record-panel .favorites-panel{box-shadow:none}
+.calc-drug-head{flex-wrap:wrap;gap:6px}
+.calc-draft-button{border:1px solid var(--herb);background:#edf1e7;color:var(--herb);border-radius:9px;padding:7px 10px;font-weight:700;cursor:pointer}

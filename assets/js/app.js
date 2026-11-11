@@ -30,6 +30,7 @@ import {
   harvestInfo,
   harvestOverview,
   matchingRecordRanges,
+  legacyRecordRange,
   recordWater,
   todayKey,
   verifiedRecordRange,
@@ -60,7 +61,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.0';
+const VERSION = 'v1.6.1';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -257,7 +258,6 @@ function renderOverlay() {
     overlayEl.innerHTML = recordFormHtml(o.draft, recentAdditiveOptions(), state.fields, {
       ...favoriteOptions(), templates: field?.templates || [], history,
       historyQuery: o.historyQuery || '',
-      query: o.query || '', results: o.results || [], searching: o.searching, message: o.message,
       saving: o.saving,
     });
   } else if (o.kind === 'record-detail') {
@@ -767,7 +767,7 @@ function favoriteOptions() {
     }
   }
 
-  return { pinned, recent: [...seen.values()].slice(0, RECENT_DRUG_LIMIT), expanded: state.favoritesExpanded };
+  return { pinned, recent: [...seen.values()].slice(0, RECENT_DRUG_LIMIT), expanded: state.favoritesExpanded, draftDrugs: state.recordDraft?.drugs, editingRecord: Boolean(state.recordDraft?.createdAt) };
 }
 
 /** 過去真正保存過的添加物才列為常用；只帶名稱與單位，不沿用上次用量。 */
@@ -1004,7 +1004,7 @@ function showRecordDraft(draft) {
   renderOverlay();
 }
 
-function openRecordForm(fromCalc = false) {
+function openRecordForm(fromCalc = false, onlyItem = null) {
   if (state.recordDraft) {
     resumeRecordDraft();
     return;
@@ -1014,15 +1014,8 @@ function openRecordForm(fromCalc = false) {
     state.records.filterFieldId || (state.fields.length === 1 ? state.fields[0].id : '');
   const field = state.fields.find((entry) => entry.id === fieldId);
   const crop = fromCalc ? state.calc.crop : field?.crop || '';
-  const drugs = fromCalc ? state.calc.items.filter((item) => item.drug).map((item) => {
-    const selected = item.ranges[item.selected];
-    const drug = recordDrug(item.drug, selected);
-    drug.ranges = item.allRanges || item.ranges;
-    const matching = matchingRecordRanges(drug.ranges, crop);
-    applyRecordRange(drug, matching.includes(selected) ? selected : matching.length === 1 ? matching[0] : null);
-    return drug;
-  }) : [];
-
+  const drugs = fromCalc ? (onlyItem ? [onlyItem] : state.calc.items.filter((item) => item.drug))
+    .map((item) => drugFromCalc(item, crop)) : [];
   showRecordDraft({
     date: todayKey(),
     time: '',
@@ -1039,6 +1032,41 @@ function openRecordForm(fromCalc = false) {
     note: '',
     error: '',
   });
+}
+
+function drugFromCalc(item, crop) {
+  const selected = item.ranges[item.selected];
+  const drug = recordDrug(item.drug);
+  drug.ranges = item.allRanges || item.ranges;
+  const matching = matchingRecordRanges(drug.ranges, crop);
+  applyRecordRange(drug, matching.includes(selected) ? selected : matching.length === 1 ? matching[0] : null);
+  return drug;
+}
+
+function toggleCalcDraftDrug(id) {
+  const item = findItem(id);
+  if (!item?.drug || item.loading) return;
+  const draft = state.recordDraft;
+  if (!draft) {
+    openRecordForm(true, item);
+    return;
+  }
+  if (draft.createdAt) {
+    toast('請先完成正在編輯的舊紀錄');
+    return;
+  }
+  const key = license(item.drug);
+  const index = draft.drugs.findIndex((drug) => drug.license === key);
+  if (index >= 0) {
+    draft.drugs.splice(index, 1);
+    if (!draft.drugs.length) draft.mode = 'tank';
+  } else {
+    draft.drugs.push(drugFromCalc(item, draft.crop));
+  }
+  recomputeHarvest(draft);
+  persistRecordDraft(draft);
+  render();
+  toast(index >= 0 ? '已從本次施作移除' : '已加入本次施作');
 }
 
 function resumeRecordDraft() {
@@ -1062,7 +1090,7 @@ function openRecordFormForEdit(app) {
   }
   const drugs = (app.drugs || []).map((drug) => ({
     ...drug,
-    rangeVerified: verifiedRecordRange(drug, app.crop),
+    rangeVerified: legacyRecordRange(drug) ? undefined : verifiedRecordRange(drug, app.crop),
   }));
   showRecordDraft({ ...app, drugs, additives: (app.additives || []).map((a) => ({ ...a })), error: '' });
 }
@@ -1085,26 +1113,6 @@ function applyRecordTemplate(draft, template) {
   draft.drugs = template.drugs.map((drug) => ({ ...drug, amount: '', water: '', rangeVerified: false, amountUnitChosen: true }));
   draft.additives = template.additives.map((item) => ({ ...item, amount: '', note: '' }));
   refreshRecordRanges(draft);
-}
-
-async function searchRecordDrugs() {
-  const overlay = state.overlay;
-  const query = overlay.query?.trim();
-  if (!query || overlay.searching) return;
-  overlay.searching = true;
-  overlay.message = '';
-  renderOverlay();
-  try {
-    const { rows } = await searchWithFallback(query);
-    overlay.results = rows.slice(0, 40);
-    overlay.message = rows.length ? '' : '找不到相符藥劑';
-  } catch (error) {
-    overlay.results = [];
-    overlay.message = error.message;
-  } finally {
-    overlay.searching = false;
-    if (state.overlay === overlay) renderOverlay();
-  }
 }
 
 function addRecordDrug(drug) {
@@ -1206,7 +1214,7 @@ async function saveRecord() {
       ingredient: d.ingredient,
       source: d.source,
       cropOfficial: d.cropOfficial,
-      rangeVerified: d.rangeVerified === true,
+      rangeVerified: d.rangeVerified,
       target: d.target,
       dilution: d.dilution,
       dosePerHa: d.dosePerHa,
@@ -1426,6 +1434,7 @@ const ACTIONS = {
   'pick-field': (d) => pickField(d.id),
 
   /* 紀錄 */
+  'toggle-calc-draft-drug': (d) => toggleCalcDraftDrug(d.id),
   'open-record-form': () => openRecordForm(true),
   'new-record': () => openRecordForm(),
   'resume-record': () => resumeRecordDraft(),
@@ -1435,8 +1444,6 @@ const ACTIONS = {
     state.overlay = null;
     render();
   },
-  'record-search': () => searchRecordDrugs(),
-  'record-pick-drug': (d) => addRecordDrug(state.overlay.results?.[Number(d.index)]),
   'record-recheck': (d) => loadRecordDrug(state.overlay.draft, state.overlay.draft.drugs[Number(d.idx)]),
   'record-bucket-add': () => {
     const draft = state.overlay.draft;
@@ -1730,9 +1737,6 @@ document.addEventListener('input', (event) => {
       form.crop = value;
       break;
 
-    case 'record-query':
-      state.overlay.query = value;
-      break;
     case 'record-bucket-water':
       draft.buckets[Number(idx)] = value;
       updateBucketTotal(draft);
@@ -1920,10 +1924,6 @@ document.addEventListener('keydown', (event) => {
     event.preventDefault();
     event.target.blur();
     return;
-  }
-  if (event.key === 'Enter' && event.target.dataset.field === 'record-query') {
-    event.preventDefault();
-    searchRecordDrugs();
   }
   if (event.key === 'Enter' && event.target.dataset.field === 'item-query') {
     event.preventDefault();

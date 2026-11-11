@@ -16,6 +16,7 @@ import {
   modeLabel,
   monthGrid,
   matchingRecordRanges,
+  legacyRecordRange,
   missingHarvestDrugs,
   parseDays,
   recordHarvest,
@@ -367,7 +368,7 @@ export function itemOutputHtml(item, areaHa, water) {
         <b>${esc(text(range['作物名稱']))}</b>
       </div>
 
-      ${verdictHtml(range, areaHa, water)}
+      ${item.cropMissing ? '<p class="legal-note">以下為所選其他作物的標示資料。</p>' : verdictHtml(range, areaHa, water)}
 
       <dl class="mini-facts">
         <div><dt>施藥間隔</dt><dd>${esc(text(range['施藥間隔']) || '—')}</dd></div>
@@ -431,9 +432,11 @@ export function itemResultsHtml(item, crop) {
 }
 
 function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
+  const inDraft = item.drug && favorites?.draftDrugs?.some((drug) => drug.license === license(item.drug));
   const head = `
     <div class="calc-drug-head">
       <span class="step-stamp">第 ${item.id} 種</span>
+      ${item.drug && !item.loading && !favorites?.editingRecord ? `<button type="button" class="calc-draft-button" data-action="toggle-calc-draft-drug" data-id="${item.id}">${inDraft ? "從本次施作移除" : "加入本次施作"}</button>` : ''}
       ${canRemove ? `<button class="remove" type="button" data-action="item-remove" data-id="${item.id}">－ 移除</button>` : ''}
     </div>`;
 
@@ -604,8 +607,8 @@ export function calcViewHtml(calc, fields, areaHa, canRecord, favorites) {
 
       <button class="add-drug" type="button" data-action="add-item"><span>＋</span>增加一種藥劑</button>
 
-      <button class="record-cta" type="button" data-action="open-record-form"${canRecord ? '' : ' disabled'}>
-        完成施作並記錄
+      <button class="record-cta" type="button" data-action="open-record-form"${canRecord || favorites?.draftDrugs ? '' : ' disabled'}>
+        ${favorites?.draftDrugs ? '開啟本次施作' : '完成施作並記錄'}
       </button>
       <p class="cta-note">${canRecord
         ? '試算不會自動變成紀錄。實際噴完之後再按這裡填真正用掉的量，也可以順手記下光合菌、展著劑這類自己加的東西 🧪'
@@ -681,7 +684,7 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
   const filtered = applications.filter((app) =>
     (!filterFieldId || app.fieldId === filterFieldId) &&
     (!from || app.date >= from) && (!to || app.date <= to) &&
-    (!keyword || [...(app.drugs || []), ...(app.additives || [])].some((item) =>
+    (!keyword || String(app.fieldName ?? '').toLowerCase().includes(keyword) || [...(app.drugs || []), ...(app.additives || [])].some((item) =>
       [item.name, item.ingredient, item.license].some((value) => String(value ?? '').toLowerCase().includes(keyword)))));
 
   const countByDate = new Map();
@@ -720,7 +723,7 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
          </div>`;
 
   return `
-    <section class="view">
+    <section class="view records-page">
       <div class="page-title">
         <span class="eyebrow">下田做了什麼</span>
         <h2>施作紀錄</h2>
@@ -747,8 +750,8 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
       <details class="favorites-panel"${searching ? ' open' : ''}>
         <summary class="favorites-trigger"><strong>搜尋施作紀錄</strong></summary>
         <div class="favorites-content">
-          <label class="field"><span>藥名、資材或許可證</span><input type="search" data-field="records-query" value="${esc(query)}" /></label>
-          <div class="two-fields">
+          <label class="field"><span>土地名稱、藥名、資材或許可證</span><input type="search" data-field="records-query" value="${esc(query)}" /></label>
+          <div class="record-date-filter">
             <label class="field"><span>開始日期</span><input type="date" data-field="records-from" value="${esc(from)}" /></label>
             <label class="field"><span>結束日期</span><input type="date" data-field="records-to" value="${esc(to)}" /></label>
           </div>
@@ -783,7 +786,9 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.0・這一版</b>
+      <b>v1.6.1・這一版</b>
+      <ul><li>試算可加入或移除本次施作藥劑，施作紀錄可查土地名稱。</li><li>恢復依舊紀錄保存的採收天數，並整理施作表單的卡片層級。</li></ul>
+      <b>v1.6.0</b>
       <ul>
         <li>施作紀錄統一新增入口，可記藥劑、資材或一起施用，並自動保存草稿。</li>
         <li>土地可設定用水量、常用組合，新增時可帶入這塊地的歷史用藥。</li>
@@ -795,14 +800,6 @@ function releaseLogHtml() {
       <ul>
         <li>藥劑查詢與用量試算新增一致的常用藥劑卡片，顯示釘選數量，可直接查看詳情或移除常用。</li>
       </ul>
-
-      <b>v1.5.2</b>
-      <ul>
-        <li>用量試算更改作物或切換土地時，已選藥劑的防治作物、病蟲害用途與用量同步切換，不必重新選藥。</li>
-        <li>新增「管理常用藥劑」，可直接移除釘選；已選藥劑與施作紀錄會保留。</li>
-        <li>網站檔案依程式、樣式、圖示、資料與測試分類，方便整包上傳維護。</li>
-      </ul>
-
 
     </div>`;
 }
@@ -1285,19 +1282,7 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
       </div>
     </details>` : ''}
     ${choice('加入常用藥劑', 'record-drug-quick', [...(options.pinned || []), ...(options.recent || [])].map((item) =>
-      `<option value="${esc(item.key)}">${esc(item.name)}</option>`))}
-    <details class="favorites-panel"${options.query || options.searching || options.message ? ' open' : ''}>
-      <summary class="favorites-trigger"><strong>查詢並加入藥劑</strong></summary>
-      <div class="favorites-content">
-        <div class="search-line">
-          <input type="search" data-field="record-query" value="${esc(options.query)}" aria-label="藥劑名稱或代號" placeholder="藥劑名稱或代號" />
-          <button type="button" data-action="record-search"${options.searching ? ' disabled' : ''}>${options.searching ? '查詢中' : '查詢'}</button>
-        </div>
-        ${options.message ? `<p>${esc(options.message)}</p>` : ''}
-        ${(options.results || []).map((drug, i) => `<button class="record-row" type="button" data-action="record-pick-drug" data-index="${i}">
-          <strong>${esc(drugTitle(drug))}</strong><span>${esc(drugSubtitle(drug))} · ${esc(license(drug))}</span></button>`).join('')}
-      </div>
-    </details>`;
+      `<option value="${esc(item.key)}">${esc(item.name)}</option>`))}`;
 
   const fieldPicker = fields.length
     ? `<label class="field">
@@ -1469,6 +1454,7 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
         ? '這份紀錄不會套用農業部藥劑建議。請只填實際使用的配方、用量與用水；若配方含農藥成分，仍須逐一核對產品標示。'
         : '面積換算只當作標示參考，不會自動寫進實際用量。保存的是你親自確認過的施作數字。'}</p>
 
+      <section class="record-panel record-panel-context"><h3>土地與施作日期</h3>
       <label class="field">
         <span>施作日期</span>
         <input type="date" data-field="record-date" value="${esc(draft.date)}" />
@@ -1504,7 +1490,9 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
         <input data-field="record-crop" value="${esc(draft.crop)}" placeholder="例如：酪梨" />
       </label>
 
-      ${quickAdd}
+      </section>
+      <section class="record-panel record-panel-drugs">${quickAdd}${drugSection}</section>
+      <section class="record-panel record-panel-water"><h3>施作方式與用水</h3>
       ${modeBlock}
 
       ${customOnly || draft.mode === 'tank'
@@ -1525,8 +1513,8 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
         </div>
       </details>` : ''}
 
-      ${drugSection}
-
+      </section>
+      <section class="record-panel record-panel-additives">
       <div class="section-row"><h3>${customOnly ? '🧴 自訂配方／資材' : '🧪 其他添加物'}</h3><span>${additives.length} 項</span></div>
       <p class="legal-note">${customOnly
         ? '這些項目不會被當成農業部核准藥劑，也不會產生官方建議稀釋或安全採收期。'
@@ -1541,9 +1529,12 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
         <input data-field="record-note" value="${esc(draft.note)}" placeholder="例如：下午完成、風大改噴下風處" />
       </label>
 
+      </section>
+      <section class="record-panel record-panel-review">
       ${harvest}
 
       <div data-record-review>${recordReviewHtml({ ...draft, drugs, additives })}</div>
+      </section>
       ${draft.error ? `<p class="field-error">${esc(draft.error)}</p>` : ''}
 
       <button class="record-cta" type="button" data-action="save-record"${options.saving ? ' disabled' : ''}>${options.saving ? '儲存中…' : draft.createdAt ? '儲存修改' : '確認並保存到本機'}</button>
@@ -1565,7 +1556,7 @@ export function recordDetailHtml(app, confirmDelete) {
       // 實際稀釋倍數由那天真正倒進去的藥量與水量反推，不是抄官方的建議值。
       const water = app.mode === 'separate' ? d.water : app.water;
       const actual = actualDilution(d.amount, d.amountUnit, water);
-      const verified = verifiedRecordRange(d, app.crop);
+      const verified = legacyRecordRange(d) || verifiedRecordRange(d, app.crop);
       const phiDays = verified ? parseDays(d.phi) : null;
       const harvest = phiDays === null ? null : addDays(app.date, phiDays);
 
@@ -1630,6 +1621,7 @@ export function recordDetailHtml(app, confirmDelete) {
       </div>
 
       ${drugSection}
+      ${drugList.some(legacyRecordRange) ? '<p class="legal-note">舊紀錄的標示與採收日依當時保存的資料顯示。</p>' : ''}
       ${harvestInfo.unknown ? `<div class="verdict warn"><strong>待確認藥劑：${esc(harvestInfo.missing.join('、'))}</strong>
         ${harvestInfo.date ? `<p>已知部分推算：${esc(formatSlashDate(harvestInfo.date))}</p>` : ''}</div>` : ''}
 
