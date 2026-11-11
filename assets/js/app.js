@@ -62,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.3';
+const VERSION = 'v1.6.4';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -1132,7 +1132,7 @@ function applyRecordTemplate(draft, template) {
   if ((draft.drugs.length || draft.additives.length) && !window.confirm('要以選取的組合取代這份草稿的藥劑和資材嗎？')) return;
   draft.mode = template.drugs.length && template.mode === 'separate' ? 'separate' : 'tank';
   draft.drugs = template.drugs.map((drug) => ({ ...drug, amount: '', water: '', rangeVerified: false, amountUnitChosen: true }));
-  draft.additives = template.additives.map((item) => ({ ...item, amount: '', note: '' }));
+  draft.additives = template.additives.map(({ name, unit, amount }) => ({ name, unit, amount: amount ?? '', note: '' }));
   refreshRecordRanges(draft);
 }
 
@@ -1521,7 +1521,7 @@ const ACTIONS = {
     overlayEl.querySelector('[data-field="template-name"]')?.focus();
   },
   'template-add-additive': () => {
-    state.overlay.form.templateEditor.additives.push({ name: '', unit: '' });
+    state.overlay.form.templateEditor.additives.push({ name: '', amount: '', unit: '' });
     renderOverlay();
   },
   'template-remove-additive': (d) => {
@@ -1540,7 +1540,13 @@ const ACTIONS = {
     const form = state.overlay.form;
     const editor = form.templateEditor;
     const name = editor.name.trim();
-    const additives = editor.additives.filter((item) => item.name.trim());
+    const additives = editor.additives.map(({ name, unit, amount }) => ({
+      name: name.trim(), unit, amount: String(amount ?? '').trim(),
+    })).filter((item) => item.name || item.amount || item.unit);
+    if (additives.some((item) => !item.name || (item.amount && (!positiveNumber(item.amount) || !item.unit)))) {
+      toast('請填資材名稱。若設定施用量，請填大於零的數字並選擇單位');
+      return;
+    }
     if (!name || (!editor.drugs.length && !additives.length)) {
       toast('請填組合名稱，並加入至少一種藥劑或資材');
       return;
@@ -1778,6 +1784,9 @@ document.addEventListener('input', (event) => {
     case 'template-additive-name':
       form.templateEditor.additives[Number(idx)].name = value;
       break;
+    case 'template-additive-amount':
+      form.templateEditor.additives[Number(idx)].amount = value;
+      break;
     case 'template-additive-unit':
       form.templateEditor.additives[Number(idx)].unit = value;
       break;
@@ -1855,7 +1864,9 @@ document.addEventListener('change', (event) => {
   const value = event.target.value;
   const draft = state.overlay?.draft;
 
-  if (field === 'template-mode') {
+  if (field === 'template-additive-unit') {
+    state.overlay.form.templateEditor.additives[Number(idx)].unit = value;
+  } else if (field === 'template-mode') {
     state.overlay.form.templateEditor.mode = value;
   } else if (field === 'template-add-drug' && value) {
     const editor = state.overlay.form.templateEditor;

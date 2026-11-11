@@ -797,12 +797,12 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.3・這一版</b>
+      <b>v1.6.4・這一版</b>
+      <ul><li>常用組合的資材可選擇單位，並可設定預設施用量。</li></ul>
+      <b>v1.6.3</b>
       <ul><li>修正日期篩選操作，新增清除搜尋按鈕並調整設定卡片箭頭。</li></ul>
       <b>v1.6.2</b>
       <ul><li>可在施作草稿中編輯土地的常用組合，設定新增常用藥劑管理。</li></ul>
-      <b>v1.6.1</b>
-      <ul><li>試算可加入或移除本次施作藥劑，施作紀錄可查土地名稱。</li><li>恢復依舊紀錄保存的採收天數，並整理施作表單的卡片層級。</li></ul>
     </div>`;
 }
 
@@ -1114,9 +1114,11 @@ export function fieldFormHtml(form, fields = [], favorites = [], templatesOnly =
         </div>`).join('')}
         ${editing.additives.map((item, index) => `<div class="field-row template-additive">
           <label class="field"><span>資材名稱</span><input data-field="template-additive-name" data-idx="${index}" value="${esc(item.name)}" /></label>
-          <label class="field"><span>單位</span><input data-field="template-additive-unit" data-idx="${index}" value="${esc(item.unit)}" /></label>
+          <label class="field"><span>預設施用量（選填）</span><input inputmode="decimal" data-field="template-additive-amount" data-idx="${index}" value="${esc(item.amount)}" /></label>
+          <label class="field"><span>單位</span><select data-field="template-additive-unit" data-idx="${index}">${additiveUnitOptions(item.unit)}</select></label>
           <button type="button" class="remove" data-action="template-remove-additive" data-idx="${index}">移除</button>
         </div>`).join('')}
+        <p class="legal-note">資材預設施用量會帶入施作草稿，可依當次實際用量修改。</p>
         <button type="button" class="ghost-btn" data-action="template-add-additive">＋ 新增資材</button>
         <button type="button" class="record-cta" data-action="template-apply-edit">完成編輯</button>
         <button type="button" class="ghost-btn" data-action="template-cancel-edit">取消編輯</button>

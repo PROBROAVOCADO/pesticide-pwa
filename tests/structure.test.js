@@ -22,9 +22,9 @@ it('分類後入口、安裝圖示、模組引用及離線快取中的檔案全�
   }
   const app = await read('assets/js/app.js');
   assert.ok(app.includes("register(new URL('../../sw.js', import.meta.url))"));
-  assert.ok(app.includes("const VERSION = 'v1.6.3'"));
-  assert.ok(html.includes('>v1.6.3</button>'));
-  assert.ok(sw.includes('field-meds-pwa-v1.6.3-r1'));
+  assert.ok(app.includes("const VERSION = 'v1.6.4'"));
+  assert.ok(html.includes('>v1.6.4</button>'));
+  assert.ok(sw.includes('field-meds-pwa-v1.6.4-r1'));
   const catalog = await read('assets/js/range-catalog.js');
   assert.ok(catalog.includes('../../data/ranges/'));
 });

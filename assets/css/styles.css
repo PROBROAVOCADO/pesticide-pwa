@@ -376,3 +376,7 @@ input,select,textarea{font-family:inherit;font-size:16px;line-height:1.5}
 .setting-row>i::before{content:"";width:8px;height:8px;box-sizing:border-box;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg)}
 .setting-disclosure>summary.setting-row{display:flex;align-items:center}
 .setting-disclosure>summary.setting-row>i::before{transform:rotate(45deg)}
+
+.template-additive{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;align-items:end}
+.template-additive .field:first-child{grid-column:1 / -1}
+.template-additive .remove{grid-column:2;justify-self:end}
