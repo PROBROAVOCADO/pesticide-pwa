@@ -62,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.2';
+const VERSION = 'v1.6.3';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -207,6 +207,17 @@ const views = {
       dbError: state.dbError,
     }),
 };
+
+// 保留篩選欄位的 DOM，避免原生日曆在輸入過程中失去焦點。
+function refreshRecordSearchResults() {
+  const results = screenEl.querySelector('[data-record-search-results]');
+  if (!results) return;
+  const next = document.createElement('template');
+  next.innerHTML = views.records();
+  results.replaceWith(next.content.querySelector('[data-record-search-results]'));
+  const clear = screenEl.querySelector('[data-action="clear-record-search"]');
+  if (clear) clear.disabled = !(state.records.query || state.records.from || state.records.to);
+}
 
 /** 重畫整個分頁。使用者正在打字時不要呼叫，游標會跑掉。 */
 function render() {
@@ -1604,6 +1615,11 @@ const ACTIONS = {
     state.records.selected = state.records.selected === d.date ? null : d.date;
     render();
   },
+  'clear-record-search': () => {
+    Object.assign(state.records, { query: '', from: '', to: '', selected: null });
+    for (const input of screenEl.querySelectorAll('[data-record-search] input')) input.value = '';
+    refreshRecordSearchResults();
+  },
   'clear-date': () => {
     state.records.selected = null;
     render();
@@ -1852,7 +1868,7 @@ document.addEventListener('change', (event) => {
   } else if (field === 'records-query' || field === 'records-from' || field === 'records-to') {
     state.records[field.slice(8)] = value;
     state.records.selected = null;
-    render();
+    refreshRecordSearchResults();
   } else if (field === 'record-crop' && draft.cropDirty) {
     draft.cropDirty = false;
     refreshRecordRanges(draft);

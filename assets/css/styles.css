@@ -369,3 +369,10 @@ input,select,textarea{font-family:inherit;font-size:16px;line-height:1.5}
 .record-panel .favorites-panel{box-shadow:none}
 .calc-drug-head{flex-wrap:wrap;gap:6px}
 .calc-draft-button{border:1px solid var(--herb);background:#edf1e7;color:var(--herb);border-radius:9px;padding:7px 10px;font-weight:700;cursor:pointer}
+
+.record-search-clear{display:inline-flex;align-items:center;min-height:34px;padding:4px 10px;margin-bottom:6px;border:1px solid var(--rule);border-radius:8px;background:var(--paper);color:var(--herb);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.record-search-clear:disabled{opacity:.45;cursor:default}
+.setting-row>i{font-size:0}
+.setting-row>i::before{content:"";width:8px;height:8px;box-sizing:border-box;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(-45deg)}
+.setting-disclosure>summary.setting-row{display:flex;align-items:center}
+.setting-disclosure>summary.setting-row>i::before{transform:rotate(45deg)}

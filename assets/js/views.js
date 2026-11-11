@@ -755,7 +755,7 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
            </label>`
         : ''}
 
-      <details class="favorites-panel"${searching ? ' open' : ''}>
+      <details class="favorites-panel" data-record-search${searching ? ' open' : ''}>
         <summary class="favorites-trigger"><strong>搜尋施作紀錄</strong></summary>
         <div class="favorites-content">
           <label class="field"><span>土地名稱、藥名、資材或許可證</span><input type="search" data-field="records-query" value="${esc(query)}" /></label>
@@ -763,9 +763,11 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
             <label class="field"><span>開始日期</span><input type="date" data-field="records-from" value="${esc(from)}" /></label>
             <label class="field"><span>結束日期</span><input type="date" data-field="records-to" value="${esc(to)}" /></label>
           </div>
+          <button type="button" class="record-search-clear" data-action="clear-record-search"${query || from || to ? '' : ' disabled'}>清除搜尋</button>
         </div>
       </details>
 
+      <div data-record-search-results>
       <div class="calendar">
         <div class="cal-head">
           <button type="button" class="icon-btn" data-action="month-prev" aria-label="上個月">‹</button>
@@ -784,6 +786,7 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
       ${selected ? '<button type="button" class="clear-date" data-action="clear-date">← 顯示最近的紀錄</button>' : ''}
 
       ${listBody}
+      </div>
     </section>`;
 }
 
@@ -794,18 +797,12 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.2・這一版</b>
+      <b>v1.6.3・這一版</b>
+      <ul><li>修正日期篩選操作，新增清除搜尋按鈕並調整設定卡片箭頭。</li></ul>
+      <b>v1.6.2</b>
       <ul><li>可在施作草稿中編輯土地的常用組合，設定新增常用藥劑管理。</li></ul>
       <b>v1.6.1</b>
       <ul><li>試算可加入或移除本次施作藥劑，施作紀錄可查土地名稱。</li><li>恢復依舊紀錄保存的採收天數，並整理施作表單的卡片層級。</li></ul>
-      <b>v1.6.0</b>
-      <ul>
-        <li>施作紀錄統一新增入口，可記藥劑、資材或一起施用，並自動保存草稿。</li>
-        <li>土地可設定用水量、常用組合，新增時可帶入這塊地的歷史用藥。</li>
-        <li>採收提醒標出待確認的藥劑，並依本次作物核對用途。</li>
-        <li>支援分桶用水、搜尋紀錄及備份常用項目，底部視窗可下拉關閉。</li>
-      </ul>
-
     </div>`;
 }
 
@@ -840,7 +837,7 @@ function settingDisclosureHtml({ title, hint, content }) {
   return `
     <details class="setting-disclosure">
       <summary class="setting-row">
-        <span><b>${title}</b><small>${hint}</small></span><i aria-hidden="true">⌄</i>
+        <span><b>${title}</b><small>${hint}</small></span><i aria-hidden="true"></i>
       </summary>
       <div class="setting-panel">${content}</div>
     </details>`;
@@ -858,25 +855,25 @@ export function settingsViewHtml({ version, aphiaUrl, lineUrl, fieldCount, appCo
       ${dbError ? `<div class="safety-card"><b>😵 本機儲存無法使用</b><p>${esc(dbError)}查詢與試算仍可正常使用，但土地與施作紀錄無法保存。無痕模式是常見原因。</p></div>` : ''}
 
       <button class="setting-row primary" data-action="install">
-        <span><b>📲 安裝到手機</b><small>加入主畫面，像 App 一樣開啟</small></span><i>›</i>
+        <span><b>📲 安裝到手機</b><small>加入主畫面，像 App 一樣開啟</small></span><i aria-hidden="true"></i>
       </button>
 
       <div class="section-row"><h3>📦 我的資料</h3><span>只在這支手機</span></div>
 
       <button class="setting-row" data-action="open-fields">
-        <span><b>🗂 土地管理</b><small>目前 ${fieldCount} 筆</small></span><i>›</i>
+        <span><b>🗂 土地管理</b><small>目前 ${fieldCount} 筆</small></span><i aria-hidden="true"></i>
       </button>
 
       <button class="setting-row" data-action="open-favorites">
-        <span><b>★ 常用藥劑管理</b><small>已釘選 ${favoriteCount} 支</small></span><i>›</i>
+        <span><b>★ 常用藥劑管理</b><small>已釘選 ${favoriteCount} 支</small></span><i aria-hidden="true"></i>
       </button>
 
       <button class="setting-row" data-action="export-backup">
-        <span><b>💾 匯出備份</b><small>${appCount} 筆施作紀錄、土地與常用項目 · ${lastBackup ? `上次匯出 ${esc(formatSlashDate(lastBackup))}` : '尚無匯出記錄'}</small></span><i>›</i>
+        <span><b>💾 匯出備份</b><small>${appCount} 筆施作紀錄、土地與常用項目 · ${lastBackup ? `上次匯出 ${esc(formatSlashDate(lastBackup))}` : '尚無匯出記錄'}</small></span><i aria-hidden="true"></i>
       </button>
 
       <button class="setting-row" data-action="import-backup">
-        <span><b>📥 匯入備份</b><small>換手機時把資料帶回來</small></span><i>›</i>
+        <span><b>📥 匯入備份</b><small>換手機時把資料帶回來</small></span><i aria-hidden="true"></i>
       </button>
 
       ${settingDisclosureHtml({
