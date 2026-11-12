@@ -62,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.4';
+const VERSION = 'v1.6.6';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -219,11 +219,15 @@ function refreshRecordSearchResults() {
   if (clear) clear.disabled = !(state.records.query || state.records.from || state.records.to);
 }
 
+let renderedTab;
+
 /** 重畫整個分頁。使用者正在打字時不要呼叫，游標會跑掉。 */
 function render() {
   const favoritesPanel = screenEl.querySelector('[data-favorites-panel]');
   if (favoritesPanel) state.favoritesExpanded = favoritesPanel.open;
   screenEl.innerHTML = views[state.tab]();
+  if (renderedTab !== state.tab) screenEl.scrollTop = 0;
+  renderedTab = state.tab;
   for (const button of tabsEl.querySelectorAll('button')) {
     button.setAttribute('aria-current', String(button.dataset.tab === state.tab));
   }

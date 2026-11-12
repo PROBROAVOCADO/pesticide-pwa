@@ -61,9 +61,37 @@ export const license = (d) => `${text(d['許可證字'])}${text(d['許可證號'
 /** 卡片主標題：優先顯示廠牌名稱，其次普通名稱，最後退回許可證號。 */
 export const drugTitle = (d) => text(d['廠牌名稱']) || text(d['中文名稱']) || license(d);
 
+// 防檢署《農藥標準規格準則》附表一。只供畫面顯示，保留原始代碼做資料比對。
+const FORMULATION_NAMES = {
+  AE: '噴霧劑', AL: '其他液劑', AP: '其他粉劑', BR: '塊劑', CB: '濃餌劑',
+  CP: '觸殺粉劑', CS: '膠囊懸著劑', DC: '水分散性乳劑', DP: '粉劑',
+  DS: '種子處理粉劑', DT: '片劑（直接使用）', EC: '乳劑', EG: '乳粒劑',
+  EO: '油基乳劑', EP: '乳粉劑', ES: '種子處理乳劑', EW: '水基乳劑',
+  FS: '種子處理用水懸劑', FU: '燻煙劑', GA: '氣劑', GD: '膠劑', GE: '產氣劑',
+  GL: '乳膠劑', GR: '粒劑', GS: '軟膏劑', GW: '溶膠劑', HN: '熱霧劑',
+  KN: '冷霧劑', LS: '種子處理液劑', ME: '微乳劑', OD: '水分散性油懸劑',
+  OF: '油懸劑', OL: '油溶性液劑', OP: '油分散性粉劑', PA: '糊狀劑',
+  PR: '藥籤劑', RB: '餌劑', SC: '水懸劑', SD: '直接噴施水懸劑', SE: '濃懸乳劑',
+  SG: '水溶性粒劑', SL: '溶液', SO: '擴佈油', SP: '水溶性粉劑', ST: '水溶性片劑',
+  SU: '超低容量懸浮劑', TB: '片劑', TC: '原體', TK: '原體', UL: '超低容量液劑',
+  VP: '蒸散劑', WG: '水分散性粒劑', WP: '可濕性粉劑', WS: '種子處理水分散性粉劑',
+  WT: '水分散性片劑', ZC: '膠囊水懸混劑', ZE: '膠囊懸乳混劑', ZW: '膠囊水乳混劑',
+};
+
+export function formulationLabel(value) {
+  const raw = text(value);
+  const code = raw.toUpperCase();
+  if (Object.hasOwn(FORMULATION_NAMES, code)) return FORMULATION_NAMES[code] + '（' + code + '）';
+  const bag = code.match(/^([A-Z]{2})-?SB$/);
+  if (bag && Object.hasOwn(FORMULATION_NAMES, bag[1])) {
+    return '水溶性袋裝' + FORMULATION_NAMES[bag[1]] + '（' + code + '）';
+  }
+  return raw;
+}
+
 /** 卡片副標題：普通名稱・含量・劑型。 */
 export const drugSubtitle = (d) =>
-  [text(d['中文名稱']), text(d['含量']), text(d['劑型'])].filter(Boolean).join('・');
+  [text(d['中文名稱']), text(d['含量']), formulationLabel(d['劑型'])].filter(Boolean).join('・');
 
 /**
  * 作物名稱正規化。

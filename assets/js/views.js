@@ -6,7 +6,7 @@
  */
 
 import { AREA_UNITS, actualDilution, assessApplication, calcRange, formatRange, formatWater, toHectares } from './calc.js';
-import { classTone, drugIdentity, drugSubtitle, drugTitle, license, licenseStatus, text } from './moa.js';
+import { classTone, drugIdentity, drugSubtitle, drugTitle, formulationLabel, license, licenseStatus, text } from './moa.js';
 import {
   addDays,
   areaLabel,
@@ -102,7 +102,7 @@ export function drugCardHtml(drug, action, dataAttr, compact, approval, keyword 
   const title = brand || common || license(drug);
   const showCommon = Boolean(brand && common);
 
-  const spec = [text(drug['含量']), text(drug['劑型'])].filter(Boolean).join(' ');
+  const spec = [text(drug['含量']), formulationLabel(drug['劑型'])].filter(Boolean).join(' ');
   const meta = [text(drug['廠商名稱']), license(drug)].filter(Boolean).join('・');
   const until = status.date
     ? `・${status.state === 'revoked' ? '撤銷於' : status.state === 'expired' ? '已於' : '有效至'} ${status.date.replace(/-/g, '/')}${status.state === 'expired' ? ' 到期' : ''}`
@@ -436,8 +436,7 @@ function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
   const head = `
     <div class="calc-drug-head">
       <span class="step-stamp">第 ${item.id} 種</span>
-      ${item.drug && !item.loading && !favorites?.editingRecord ? `<button type="button" class="calc-draft-button" data-action="toggle-calc-draft-drug" data-id="${item.id}">${inDraft ? "從本次施作移除" : "加入本次施作"}</button>` : ''}
-      ${canRemove ? `<button class="remove" type="button" data-action="item-remove" data-id="${item.id}">－ 移除</button>` : ''}
+      ${canRemove ? `<button class="remove" type="button" data-action="item-remove" data-id="${item.id}">移除試算卡</button>` : ''}
     </div>`;
 
   const error = item.error ? `<p class="field-error">${esc(item.error)}</p>` : '';
@@ -498,6 +497,7 @@ function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
       </div>
       ${body}
       ${error}
+      ${item.drug && !item.loading && !favorites?.editingRecord ? `<button type="button" class="calc-draft-button" data-action="toggle-calc-draft-drug" data-id="${item.id}">${inDraft ? "從本次施作移除" : "加入本次施作"}</button>` : ''}
     </article>`;
 }
 
@@ -797,12 +797,12 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.4・這一版</b>
+      <b>v1.6.6・這一版</b>
+      <ul><li>區分移除試算卡與本次施作的藥劑操作。</li></ul>
+      <b>v1.6.5</b>
+      <ul><li>固定頁首和導覽列，改善窄螢幕版面。藥劑卡片及詳情顯示劑型中文名稱。</li></ul>
+      <b>v1.6.4</b>
       <ul><li>常用組合的資材可選擇單位，並可設定預設施用量。</li></ul>
-      <b>v1.6.3</b>
-      <ul><li>修正日期篩選操作，新增清除搜尋按鈕並調整設定卡片箭頭。</li></ul>
-      <b>v1.6.2</b>
-      <ul><li>可在施作草稿中編輯土地的常用組合，設定新增常用藥劑管理。</li></ul>
     </div>`;
 }
 
@@ -968,7 +968,7 @@ export function detailHtml({ drug, ranges, loading, crop, shown, pinned, rangeSt
       <div class="detail-grid">
         <div><span>普通名稱</span><b>${esc(text(drug['中文名稱']) || '—')}</b></div>
         <div><span>分類</span><b>${esc(text(drug['農藥分類中文意義']) || '—')}</b></div>
-        <div><span>含量／劑型</span><b>${esc([text(drug['含量']), text(drug['劑型'])].filter(Boolean).join(' ') || '—')}</b></div>
+        <div><span>含量／劑型</span><b>${esc([text(drug['含量']), formulationLabel(drug['劑型'])].filter(Boolean).join(' ') || '—')}</b></div>
         <div><span>抗藥性代碼</span><b>${esc(resistance || '未提供')}</b></div>
         <div class="wide"><span>有效成分</span><b>${esc(text(drug['化學成分']) || '—')}</b></div>
         <div class="wide"><span>許可證／有效期限</span><b>${esc(license(drug))}・${esc(text(drug['有效期限']) || '—')}</b></div>

@@ -380,3 +380,23 @@ input,select,textarea{font-family:inherit;font-size:16px;line-height:1.5}
 .template-additive{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px;align-items:end}
 .template-additive .field:first-child{grid-column:1 / -1}
 .template-additive .remove{grid-column:2;justify-self:end}
+
+/* App 外框固定在視窗內，僅內容區捲動。 */
+html,body{overflow:hidden;overscroll-behavior:none}
+.app-shell{height:100vh;height:100dvh;min-height:0;min-width:0;overflow:hidden}
+.topbar,.bottom-tabs{flex-shrink:0}
+.screen{min-width:0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scroll-padding-block:12px}
+.view,.sheet,.mini-modal{overflow-wrap:anywhere}
+.screen :is(input,select,textarea),.sheet :is(input,select,textarea){min-width:0;max-width:100%}
+.two-fields>* ,.detail-grid>* ,.record-date-filter>*{min-width:0}
+@media(max-width:899px){
+  .app-shell{padding-inline:env(safe-area-inset-left) env(safe-area-inset-right)}
+  .screen{padding-bottom:20px}
+  .bottom-tabs{position:relative;inset:auto;transform:none;width:100%}
+  .bottom-tabs button{min-width:0}
+  input,select,textarea{font-size:16px!important}
+}
+
+.cal-grid,.cal-weekdays{grid-template-columns:repeat(7,minmax(0,1fr))}
+.cal-cell{min-width:0;padding-inline:0}
+.calc-drug > .calc-draft-button{display:block;width:100%;margin-top:12px;min-height:44px}
