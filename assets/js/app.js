@@ -62,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.6';
+const VERSION = 'v1.6.7';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -1415,6 +1415,7 @@ const ACTIONS = {
   },
   'item-remove': (d) => {
     state.calc.items = state.calc.items.filter((i) => i.id !== Number(d.id));
+    if (!state.calc.items.length) state.calc.items = [emptyItem()];
     render();
   },
   'item-search': (d) => runItemSearch(findItem(d.id)),
@@ -1893,7 +1894,7 @@ document.addEventListener('change', (event) => {
     applyRecordRange(drug, value === '' ? null : ranges[Number(value)]);
     recomputeHarvest(draft);
     renderOverlay();
-  } else if (field === 'record-drug-quick' && value) {
+  } else if (['record-drug-quick', 'record-drug-recent'].includes(field) && value) {
     const drug = rememberedDrug(value);
     if (drug) addRecordDrug(drug);
     else getCached(value).then((entry) => {

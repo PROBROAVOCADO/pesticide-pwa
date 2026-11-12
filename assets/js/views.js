@@ -431,11 +431,11 @@ export function itemResultsHtml(item, crop) {
       .join('')}</div>`;
 }
 
-function calcDrugHtml(item, canRemove, areaHa, water, favorites, crop) {
+function calcDrugHtml(item, position, canRemove, areaHa, water, favorites, crop) {
   const inDraft = item.drug && favorites?.draftDrugs?.some((drug) => drug.license === license(item.drug));
   const head = `
     <div class="calc-drug-head">
-      <span class="step-stamp">第 ${item.id} 種</span>
+      <span class="step-stamp">第 ${position} 種</span>
       ${canRemove ? `<button class="remove" type="button" data-action="item-remove" data-id="${item.id}">移除試算卡</button>` : ''}
     </div>`;
 
@@ -527,7 +527,8 @@ function fieldChipsHtml(fields, selectedId) {
 }
 
 export function calcItemsHtml(calc, areaHa, favorites) {
-  return calc.items.map((item) => calcDrugHtml(item, calc.items.length > 1,
+  return calc.items.map((item, index) => calcDrugHtml(item, index + 1,
+    calc.items.length > 1 || Boolean(item.drug || item.query || item.results?.length || item.loading || item.error),
     areaHa, Number(calc.water) || 0, favorites, calc.crop)).join('');
 }
 
@@ -797,12 +798,12 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.6・這一版</b>
+      <b>v1.6.7・這一版</b>
+      <ul><li>常用藥劑與最近用過分開顯示，最後一張試算卡可清除。</li></ul>
+      <b>v1.6.6</b>
       <ul><li>區分移除試算卡與本次施作的藥劑操作。</li></ul>
       <b>v1.6.5</b>
       <ul><li>固定頁首和導覽列，改善窄螢幕版面。藥劑卡片及詳情顯示劑型中文名稱。</li></ul>
-      <b>v1.6.4</b>
-      <ul><li>常用組合的資材可選擇單位，並可設定預設施用量。</li></ul>
     </div>`;
 }
 
@@ -1290,7 +1291,9 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
         ${historyOptions.length ? choice('選擇一筆紀錄', 'record-history', historyOptions) : '<p>找不到相符紀錄</p>'}
       </div>
     </details>` : ''}
-    ${choice('加入常用藥劑', 'record-drug-quick', [...(options.pinned || []), ...(options.recent || [])].map((item) =>
+    ${choice('加入常用藥劑', 'record-drug-quick', [...(options.pinned || [])].map((item) =>
+      `<option value="${esc(item.key)}">${esc(item.name)}</option>`))}
+    ${choice('加入最近用過的藥劑', 'record-drug-recent', (options.recent || []).map((item) =>
       `<option value="${esc(item.key)}">${esc(item.name)}</option>`))}`;
 
   const fieldPicker = fields.length
