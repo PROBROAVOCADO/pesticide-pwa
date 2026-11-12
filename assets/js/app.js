@@ -62,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.9';
+const VERSION = 'v1.6.10';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -2026,7 +2026,33 @@ window.addEventListener('beforeinstallprompt', (event) => {
 /* ------------------------------------------------------------------ */
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register(new URL('../../sw.js', import.meta.url)).catch(() => {});
+  const workers = navigator.serviceWorker;
+  const startedWithController = Boolean(workers.controller);
+  let interacted = false;
+  let reloading = false;
+  const markInteraction = () => { interacted = true; };
+  window.addEventListener('pointerdown', markInteraction, { once: true, capture: true });
+  window.addEventListener('keydown', markInteraction, { once: true, capture: true });
+
+  workers.addEventListener('controllerchange', () => {
+    if (!startedWithController || reloading) return;
+    if (interacted || state.overlay?.draft) {
+      toast('新版已就緒，下次開啟時套用');
+      return;
+    }
+    reloading = true;
+    location.reload();
+  });
+
+  workers.register(new URL('../../sw.js', import.meta.url), { updateViaCache: 'none' })
+    .then((registration) => {
+      const checkForUpdate = () => registration.update().catch(() => {});
+      if (startedWithController) checkForUpdate();
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') checkForUpdate();
+      });
+    })
+    .catch(() => {});
 }
 
 if (store.get('seen-version') !== VERSION) {

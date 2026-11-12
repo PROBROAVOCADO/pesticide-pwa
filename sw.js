@@ -7,7 +7,7 @@
  *
  * 發版時記得把 CACHE 的版本號一起改，否則使用者會拿到舊檔案。
  */
-const CACHE = 'field-meds-pwa-v1.6.9-r1';
+const CACHE = 'field-meds-pwa-v1.6.10-r1';
 
 const CORE = [
   './',
@@ -28,11 +28,13 @@ const CORE = [
   './assets/icons/icon-maskable-512.png',
 ];
 
+const coreUrls = new Set(CORE.map((path) => new URL(path, self.registration.scope).href));
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => Promise.allSettled(CORE.map((url) => cache.add(url))))
+      .then((cache) => cache.addAll([...coreUrls].map((url) => new Request(url, { cache: 'reload' }))))
       .then(() => self.skipWaiting()),
   );
 });
@@ -61,13 +63,15 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     (async () => {
-      // 先給快取的版本，同時在背景抓新的，下次開啟就是最新的。
-      const cached = await caches.match(request);
+      const cache = await caches.open(CACHE);
+      const cached = await cache.match(request);
+      // 核心檔案整批切換，避免背景更新把不同版本混在一起。
+      if (cached && coreUrls.has(url.href)) return cached;
       if (cached) {
         event.waitUntil(
           fetch(request)
             .then((fresh) =>
-              fresh.ok ? caches.open(CACHE).then((cache) => cache.put(request, fresh.clone())) : null,
+              fresh.ok ? cache.put(request, fresh.clone()) : null,
             )
             .catch(() => null),
         );
@@ -76,11 +80,11 @@ self.addEventListener('fetch', (event) => {
 
       try {
         const fresh = await fetch(request);
-        if (fresh.ok) (await caches.open(CACHE)).put(request, fresh.clone());
+        if (fresh.ok && url.pathname.includes('/data/ranges/')) await cache.put(request, fresh.clone());
         return fresh;
       } catch {
         if (request.mode === 'navigate') {
-          return (await caches.match('./')) || new Response('目前離線，請稍後再試。', { status: 503 });
+          return (await cache.match(self.registration.scope)) || new Response('目前離線，請稍後再試。', { status: 503 });
         }
         return new Response('', { status: 504 });
       }
