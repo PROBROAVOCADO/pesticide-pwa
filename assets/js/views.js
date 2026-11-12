@@ -146,7 +146,7 @@ export function searchViewHtml({
   // 這個欄位放在表單裡而不是結果區 —— 結果重畫時輸入框才不會被拆掉，游標不會跳走。
   const filterBox =
     total > 8
-      ? `<label for="search-filter" class="sub-label">在這 ${total} 筆結果裡再找</label>
+      ? `<label for="search-filter" class="sub-label">即時篩選這 ${total} 筆結果</label>
          <input id="search-filter" class="wide-input" data-field="search-filter" value="${esc(filter)}"
                 placeholder="輸入廠牌、廠商或許可證號" />`
       : '';
@@ -173,6 +173,7 @@ export function searchViewHtml({
         ${filterBox}
 
         <small>${esc(message)}</small>
+        <button type="button" class="clear-drug-search" data-action="clear-drug-search">清除搜尋</button>
       </form>
 
       ${favoritesPanelHtml(favorites)}
@@ -798,12 +799,12 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.8・這一版</b>
+      <b>v1.6.9・這一版</b>
+      <ul><li>藥劑查詢可一鍵清除，施作表單可選取已釘選的常用藥劑。</li></ul>
+      <b>v1.6.8</b>
       <ul><li>施作草稿可直接從最近用過的藥劑新增常用釘選。</li></ul>
       <b>v1.6.7</b>
       <ul><li>常用藥劑與最近用過分開顯示，最後一張試算卡可清除。</li></ul>
-      <b>v1.6.6</b>
-      <ul><li>區分移除試算卡與本次施作的藥劑操作。</li></ul>
     </div>`;
 }
 
@@ -1295,8 +1296,7 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
     </details>` : ''}
     ${choice('加入常用藥劑', 'record-drug-quick', [...(options.pinned || [])].map((item) =>
       `<option value="${esc(item.key)}">${esc(item.name)}</option>`))}
-    ${choice('加入最近用過的藥劑', 'record-drug-recent', recentOptions)}
-    ${choice('新增常用藥劑（從最近用過釘選）', 'record-pin-recent', recentOptions)}`;
+    ${choice('加入最近用過的藥劑', 'record-drug-recent', recentOptions)}`;
 
   const fieldPicker = fields.length
     ? `<label class="field">

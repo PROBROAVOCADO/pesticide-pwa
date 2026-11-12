@@ -400,3 +400,5 @@ html,body{overflow:hidden;overscroll-behavior:none}
 .cal-grid,.cal-weekdays{grid-template-columns:repeat(7,minmax(0,1fr))}
 .cal-cell{min-width:0;padding-inline:0}
 .calc-drug > .calc-draft-button{display:block;width:100%;margin-top:12px;min-height:44px}
+
+.search-box .clear-drug-search{margin-top:10px;min-height:36px;padding:4px 12px;background:var(--paper);border:1px solid var(--rule);color:var(--herb);border-radius:9px}

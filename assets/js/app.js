@@ -62,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.8';
+const VERSION = 'v1.6.9';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -122,18 +122,20 @@ const emptyItem = () => ({
   error: '',
 });
 
+const emptySearch = () => ({
+  query: '',
+  crop: '',
+  filter: '', // 在已取得的結果裡再篩一次（例如查完亞托敏再找大卡稱）
+  drugs: [],
+  loading: false,
+  message: '填藥劑名稱、作物，或兩個都填',
+  note: '',
+  capped: false,
+});
+
 const state = {
   tab: 'search',
-  search: {
-    query: '',
-    crop: '',
-    filter: '', // 在已取得的結果裡再篩一次（例如查完亞托敏再找大卡稱）
-    drugs: [],
-    loading: false,
-    message: '填藥劑名稱、作物，或兩個都填',
-    note: '',
-    capped: false,
-  },
+  search: emptySearch(),
   calc: { crop: '', area: '1', areaUnit: 'fen', water: '200', items: [emptyItem()], fieldId: '' },
   records: { month: new Date(), selected: null, filterFieldId: '', query: '', from: '', to: '' },
   recordDraft: readRecordDraft(),
@@ -471,52 +473,57 @@ function setSearchProgress(message) {
 }
 
 async function runMainSearch() {
-  const query = state.search.query.trim();
-  const crop = state.search.crop.trim();
+  const search = state.search;
+  if (search.loading) return;
+  const isCurrent = () => state.search === search;
+  const query = search.query.trim();
+  const crop = search.crop.trim();
 
   if (!query && !crop) {
-    state.search.message = '請填藥劑名稱，或填作物';
+    search.message = '請填藥劑名稱，或填作物';
     render();
     return;
   }
   if (query && query.length < 2) {
-    state.search.message = '藥劑名稱請至少輸入兩個字';
+    search.message = '藥劑名稱請至少輸入兩個字';
     render();
     return;
   }
 
-  state.search.loading = true;
-  state.search.drugs = [];
-  state.search.note = '';
-  state.search.capped = false;
-  state.search.filter = '';
+  search.loading = true;
+  search.drugs = [];
+  search.note = '';
+  search.capped = false;
+  search.filter = '';
 
   // 只填作物：官方端無法用作物搜尋，只能翻本機查過的。
   if (!query) {
-    state.search.message = `正在翻查這台裝置查過的藥劑…`;
+    search.message = `正在翻查這台裝置查過的藥劑…`;
     render();
     const rows = await searchCachedByCrop(crop);
-    state.search.drugs = rows;
-    state.search.message = rows.length
+    if (!isCurrent()) return;
+    search.drugs = rows;
+    search.message = rows.length
       ? `找到 ${rows.length} 筆核准用於「${crop}」的藥劑`
       : `這台裝置還沒查過核准用於「${crop}」的藥劑`;
-    state.search.note =
+    search.note =
       '官方資料沒有辦法直接用作物搜尋，所以只填作物時，這裡翻的是這台裝置查過的藥。一併填入藥劑名稱可以查得更完整。';
-    state.search.loading = false;
+    search.loading = false;
     render();
     return;
   }
 
-  state.search.message = '正在翻閱官方登記資料…';
+  search.message = '正在翻閱官方登記資料…';
   render();
 
   try {
     const { rows, capped, fromCache } = await searchWithFallback(query);
-    state.search.capped = capped;
+    if (!isCurrent()) return;
+    search.capped = capped;
 
     if (!crop) {
-      state.search.drugs = rows;
-      state.search.message = rows.length
+      search.drugs = rows;
+      search.message = rows.length
         ? `找到 ${rows.length} 筆${fromCache ? '本機保存的' : '登記'}藥劑`
         : '沒有找到符合的藥劑';
       const notes = [];
@@ -526,15 +533,16 @@ async function runMainSearch() {
           '官方單次最多只給這麼多筆，可能還有沒列出來的產品。找不到想要的廠牌時，直接用廠牌名稱查（例如「大卡稱」）最準。',
         );
       }
-      state.search.note = notes.join('');
+      search.note = notes.join('');
     } else {
-      state.search.message = `找到 ${rows.length} 筆，正在逐一比對「${crop}」…`;
+      search.message = `找到 ${rows.length} 筆，正在逐一比對「${crop}」…`;
       render();
 
       const progressive = new Map();
       let revealTimer = null;
       const revealMatches = () => {
-        state.search.drugs = [...progressive.values()]
+        if (!isCurrent()) return;
+        search.drugs = [...progressive.values()]
           .sort((a, b) => a.index - b.index)
           .map((entry) => entry.drug);
         renderSearchResultsOnly();
@@ -547,8 +555,9 @@ async function runMainSearch() {
         rangesWithFallback,
         {
           concurrency: 10,
-          onProgress: (n, total) => setSearchProgress(`正在完整比對「${crop}」…（${n}／${total}）`),
+          onProgress: (n, total) => isCurrent() && setSearchProgress(`正在完整比對「${crop}」…（${n}／${total}）`),
           onMatch: (drug, index) => {
+            if (!isCurrent()) return;
             progressive.set(license(drug), { drug, index });
             if (!revealTimer) revealTimer = setTimeout(revealMatches, 120);
           },
@@ -557,8 +566,9 @@ async function runMainSearch() {
 
       if (revealTimer) clearTimeout(revealTimer);
 
-      state.search.drugs = matched;
-      state.search.message = matched.length
+      if (!isCurrent()) return;
+      search.drugs = matched;
+      search.message = matched.length
         ? `完整比對 ${scanned} 筆，其中 ${matched.length} 筆核准用於「${crop}」`
         : failed
           ? `已比對 ${scanned} 筆，但有 ${failed} 筆使用範圍無法確認，暫時不能判定「${crop}」是否核准`
@@ -574,13 +584,13 @@ async function runMainSearch() {
         );
       }
       if (capped) notes.push('官方藥劑主清單已達單次回傳上限，可能仍有未取得的登記產品。');
-      state.search.note = notes.join('');
+      search.note = notes.join('');
     }
   } catch (error) {
-    state.search.message = `${error.message}。這台裝置也還沒有查過符合的藥劑。`;
+    search.message = `${error.message}。這台裝置也還沒有查過符合的藥劑。`;
   } finally {
-    state.search.loading = false;
-    render();
+    search.loading = false;
+    if (isCurrent()) render();
   }
 }
 
@@ -814,23 +824,6 @@ async function pickFavorite(item, key) {
   }
 
   pickItemDrug(item, drug);
-}
-
-async function pinRecentDrug(key) {
-  const overlay = state.overlay;
-  try {
-    const drug = rememberedDrug(key) || (await getCached(key))?.drug;
-    if (!drug || license(drug) !== key) {
-      toast('找不到這支藥的完整資料，請從藥劑查詢開啟詳情後釘選');
-      return;
-    }
-    await addFavorite(key, drug);
-    state.favorites = await listFavorites();
-    if (state.overlay === overlay) renderOverlay();
-    toast('已加入常用藥劑');
-  } catch (error) {
-    toast('無法加入常用藥劑：' + error.message);
-  }
 }
 
 function rememberedDrug(key) {
@@ -1414,6 +1407,11 @@ function closeOverlay() {
 /* ------------------------------------------------------------------ */
 
 const ACTIONS = {
+  'clear-drug-search': () => {
+    state.search = emptySearch();
+    render();
+    screenEl.querySelector('#drug-search')?.focus();
+  },
   tab: (d) => {
     state.tab = d.tab;
     render();
@@ -1911,9 +1909,6 @@ document.addEventListener('change', (event) => {
     applyRecordRange(drug, value === '' ? null : ranges[Number(value)]);
     recomputeHarvest(draft);
     renderOverlay();
-  } else if (field === 'record-pin-recent' && value) {
-    event.target.value = '';
-    pinRecentDrug(value);
   } else if (['record-drug-quick', 'record-drug-recent'].includes(field) && value) {
     const drug = rememberedDrug(value);
     if (drug) addRecordDrug(drug);
