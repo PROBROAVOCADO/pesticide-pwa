@@ -62,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.7';
+const VERSION = 'v1.6.8';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -814,6 +814,23 @@ async function pickFavorite(item, key) {
   }
 
   pickItemDrug(item, drug);
+}
+
+async function pinRecentDrug(key) {
+  const overlay = state.overlay;
+  try {
+    const drug = rememberedDrug(key) || (await getCached(key))?.drug;
+    if (!drug || license(drug) !== key) {
+      toast('找不到這支藥的完整資料，請從藥劑查詢開啟詳情後釘選');
+      return;
+    }
+    await addFavorite(key, drug);
+    state.favorites = await listFavorites();
+    if (state.overlay === overlay) renderOverlay();
+    toast('已加入常用藥劑');
+  } catch (error) {
+    toast('無法加入常用藥劑：' + error.message);
+  }
 }
 
 function rememberedDrug(key) {
@@ -1894,6 +1911,9 @@ document.addEventListener('change', (event) => {
     applyRecordRange(drug, value === '' ? null : ranges[Number(value)]);
     recomputeHarvest(draft);
     renderOverlay();
+  } else if (field === 'record-pin-recent' && value) {
+    event.target.value = '';
+    pinRecentDrug(value);
   } else if (['record-drug-quick', 'record-drug-recent'].includes(field) && value) {
     const drug = rememberedDrug(value);
     if (drug) addRecordDrug(drug);

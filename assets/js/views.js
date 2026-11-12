@@ -798,12 +798,12 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.7・這一版</b>
+      <b>v1.6.8・這一版</b>
+      <ul><li>施作草稿可直接從最近用過的藥劑新增常用釘選。</li></ul>
+      <b>v1.6.7</b>
       <ul><li>常用藥劑與最近用過分開顯示，最後一張試算卡可清除。</li></ul>
       <b>v1.6.6</b>
       <ul><li>區分移除試算卡與本次施作的藥劑操作。</li></ul>
-      <b>v1.6.5</b>
-      <ul><li>固定頁首和導覽列，改善窄螢幕版面。藥劑卡片及詳情顯示劑型中文名稱。</li></ul>
     </div>`;
 }
 
@@ -1279,6 +1279,8 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
   const historyQuery = String(options.historyQuery || '').trim().toLowerCase().replace(/-/g, '/');
   const historyOptions = history.filter((item) => item.label.toLowerCase().includes(historyQuery)).map((item) =>
     `<option value="${esc(item.id)}">${esc(item.label)}</option>`);
+  const recentOptions = (options.recent || []).map((item) =>
+    `<option value="${esc(item.key)}">${esc(item.name)}</option>`);
   const quickAdd = `
     <div class="section-row"><h3>藥劑與配方</h3></div>
     ${choice('這塊地的常用組合', 'record-template', (options.templates || []).map((item) =>
@@ -1293,8 +1295,8 @@ export function recordFormHtml(draft, additivePresets = [], fields = [], options
     </details>` : ''}
     ${choice('加入常用藥劑', 'record-drug-quick', [...(options.pinned || [])].map((item) =>
       `<option value="${esc(item.key)}">${esc(item.name)}</option>`))}
-    ${choice('加入最近用過的藥劑', 'record-drug-recent', (options.recent || []).map((item) =>
-      `<option value="${esc(item.key)}">${esc(item.name)}</option>`))}`;
+    ${choice('加入最近用過的藥劑', 'record-drug-recent', recentOptions)}
+    ${choice('新增常用藥劑（從最近用過釘選）', 'record-pin-recent', recentOptions)}`;
 
   const fieldPicker = fields.length
     ? `<label class="field">
