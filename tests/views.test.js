@@ -169,7 +169,7 @@ describe('使用範圍未知狀態的安全文案', () => {
 
 describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
   const html = settingsViewHtml({
-    version: 'v1.6.10',
+    version: 'v1.6.11',
     aphiaUrl: 'https://example.com/aphia',
     lineUrl: 'https://example.com/line',
     fieldCount: 2,
@@ -200,9 +200,9 @@ describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
 
   it('版本摘要只顯示最新三個版本', () => {
     assert.deepEqual(html.match(/<b>v\d+\.\d+\.\d+(?:・這一版)?<\/b>/g), [
-      '<b>v1.6.10・這一版</b>',
+      '<b>v1.6.11・這一版</b>',
+      '<b>v1.6.10</b>',
       '<b>v1.6.9</b>',
-      '<b>v1.6.8</b>',
     ]);
     assert.ok(!html.includes('v1.5.1'));
   });
@@ -211,7 +211,7 @@ describe('settingsViewHtml：操作按鈕與下拉說明分開', () => {
     assert.equal((html.match(/class="colophon"/g) || []).length, 1);
     assert.ok(html.includes('PRO-BRO AVOCADO'));
     assert.ok(html.includes('A field tool for growers, built on a family avocado farm in Nantou, Taiwan.'));
-    assert.ok(html.includes(`v1.6.10 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
+    assert.ok(html.includes(`v1.6.11 &nbsp;·&nbsp; © ${new Date().getFullYear()}`));
     assert.ok(html.indexOf('買杯咖啡支持') < html.indexOf('class="colophon"'));
   });
 });

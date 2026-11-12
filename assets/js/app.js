@@ -62,7 +62,7 @@ import {
 /* 常數                                                                */
 /* ------------------------------------------------------------------ */
 
-const VERSION = 'v1.6.10';
+const VERSION = 'v1.6.11';
 const LINE_URL = 'https://line.me/ti/p/7OorqI3Zzk';
 const APHIA_URL = 'https://pesticide.aphia.gov.tw/information/';
 
@@ -1039,19 +1039,18 @@ function showRecordDraft(draft) {
   renderOverlay();
 }
 
-function openRecordForm(fromCalc = false, onlyItem = null) {
-  if (state.recordDraft) {
-    resumeRecordDraft();
-    return;
-  }
+function openRecordForm(fromCalc = false) {
+  if (state.recordDraft) resumeRecordDraft();
+  else showRecordDraft(createRecordDraft(fromCalc));
+}
 
+function createRecordDraft(fromCalc, items = state.calc.items.filter((item) => item.drug)) {
   const fieldId = fromCalc ? state.calc.fieldId :
     state.records.filterFieldId || (state.fields.length === 1 ? state.fields[0].id : '');
   const field = state.fields.find((entry) => entry.id === fieldId);
   const crop = fromCalc ? state.calc.crop : field?.crop || '';
-  const drugs = fromCalc ? (onlyItem ? [onlyItem] : state.calc.items.filter((item) => item.drug))
-    .map((item) => drugFromCalc(item, crop)) : [];
-  showRecordDraft({
+  const drugs = fromCalc ? items.map((item) => drugFromCalc(item, crop)) : [];
+  return {
     date: todayKey(),
     time: '',
     fieldId,
@@ -1066,7 +1065,7 @@ function openRecordForm(fromCalc = false, onlyItem = null) {
     additives: [],
     note: '',
     error: '',
-  });
+  };
 }
 
 function drugFromCalc(item, crop) {
@@ -1081,11 +1080,7 @@ function drugFromCalc(item, crop) {
 function toggleCalcDraftDrug(id) {
   const item = findItem(id);
   if (!item?.drug || item.loading) return;
-  const draft = state.recordDraft;
-  if (!draft) {
-    openRecordForm(true, item);
-    return;
-  }
+  const draft = state.recordDraft || createRecordDraft(true, []);
   if (draft.createdAt) {
     toast('請先完成正在編輯的舊紀錄');
     return;

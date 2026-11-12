@@ -799,12 +799,12 @@ export function recordsViewHtml({ month, applications, selected, pending = [], c
 function releaseLogHtml() {
   return `
     <div class="release-log">
-      <b>v1.6.10・這一版</b>
+      <b>v1.6.11・這一版</b>
+      <ul><li>從試算加入本次施作時留在試算頁。</li></ul>
+      <b>v1.6.10</b>
       <ul><li>改善已安裝 App 的更新檢查與離線檔案切換。</li></ul>
       <b>v1.6.9</b>
       <ul><li>藥劑查詢可一鍵清除，施作表單可選取已釘選的常用藥劑。</li></ul>
-      <b>v1.6.8</b>
-      <ul><li>施作草稿可直接從最近用過的藥劑新增常用釘選。</li></ul>
     </div>`;
 }
 
